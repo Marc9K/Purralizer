@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Routes, Route, useNavigate } from "react-router-dom";
 import {
   Button,
   VStack,
@@ -18,6 +19,7 @@ import {
 } from "@chakra-ui/react";
 import { liveQuery } from "dexie";
 import { db, type Item } from "./db";
+import ItemDetail from "./ItemDetail";
 
 // Custom hook to use liveQuery with React
 function useLiveQuery<T>(
@@ -111,7 +113,8 @@ const sortFieldOptions = createListCollection({
   ],
 });
 
-function App() {
+function ItemsList() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<string>(Status.IDLE);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortField, setSortField] = useState<string[]>(["totalSpent"]);
@@ -486,7 +489,13 @@ function App() {
             ) : (
               <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={4}>
                 {itemsArray.map((item) => (
-                  <Card.Root key={item.id} variant="outline">
+                  <Card.Root
+                    key={item.id}
+                    variant="outline"
+                    cursor="pointer"
+                    onClick={() => navigate(`/item/${item.id}`)}
+                    _hover={{ borderColor: "blue.500" }}
+                  >
                     <Card.Body>
                       <Card.Title>{item.name}</Card.Title>
                       <Card.Description>
@@ -529,6 +538,15 @@ function App() {
         )}
       </VStack>
     </Box>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<ItemsList />} />
+      <Route path="/item/:itemId" element={<ItemDetail />} />
+    </Routes>
   );
 }
 
