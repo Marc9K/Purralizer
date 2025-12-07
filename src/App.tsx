@@ -234,6 +234,12 @@ function ItemsList() {
     return await db.items.count();
   }, []);
 
+  // Live query for total spent across all purchases
+  const { data: totalSpent } = useLiveQuery<number>(async () => {
+    const allPrices = await db.prices.toArray();
+    return allPrices.reduce((sum, p) => sum + p.price, 0);
+  }, []);
+
   const handleFileAccept = async (details: { files: File[] }) => {
     const file = details.files[0];
     if (!file) return;
@@ -275,7 +281,12 @@ function ItemsList() {
 
       data.purchases.forEach((purchase, purchaseIndex) => {
         purchase.items.forEach((item) => {
-          const itemKey = `${item.name}|${item.weight}|${item.volume}`;
+          // For items with "loose" in the name, use only name as key (ignore weight/volume)
+          const isLoose = item.name.toLowerCase().includes("loose");
+          const itemKey = isLoose
+            ? item.name.toLowerCase()
+            : `${item.name}|${item.weight}|${item.volume}`;
+
           if (!itemMap.has(itemKey)) {
             itemMap.set(itemKey, {
               name: item.name,
@@ -302,10 +313,24 @@ function ItemsList() {
       const existingItemMap = new Map<string, number>();
 
       for (const [itemKey, item] of itemMap.entries()) {
-        const existingItem = await db.items
-          .where("[name+weight+volume]")
-          .equals([item.name, item.weight, item.volume])
-          .first();
+        const isLoose = item.name.toLowerCase().includes("loose");
+        let existingItem;
+
+        if (isLoose) {
+          // For loose items, search by name only (case-insensitive)
+          const allItems = await db.items
+            .filter(
+              (dbItem) => dbItem.name.toLowerCase() === item.name.toLowerCase()
+            )
+            .toArray();
+          existingItem = allItems[0];
+        } else {
+          // For regular items, use compound index
+          existingItem = await db.items
+            .where("[name+weight+volume]")
+            .equals([item.name, item.weight, item.volume])
+            .first();
+        }
 
         if (existingItem && existingItem.id) {
           existingItemMap.set(itemKey, existingItem.id);
@@ -320,9 +345,12 @@ function ItemsList() {
           allKeys: true,
         })) as unknown as number[];
 
-        // Map new items to their IDs
+        // Map new items to their IDs using the same key format as itemMap
         itemsToAdd.forEach((item, index) => {
-          const itemKey = `${item.name}|${item.weight}|${item.volume}`;
+          const isLoose = item.name.toLowerCase().includes("loose");
+          const itemKey = isLoose
+            ? item.name.toLowerCase()
+            : `${item.name}|${item.weight}|${item.volume}`;
           existingItemMap.set(itemKey, newItemIds[index]!);
         });
       }
@@ -359,21 +387,56 @@ function ItemsList() {
     }
   };
 
+  const handleClearDB = async () => {
+    if (
+      !confirm(
+        "Are you sure you want to clear all database data? This action cannot be undone."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setStatus(Status.PROCESSING_DATA);
+      await db.prices.clear();
+      await db.items.clear();
+      await db.purchases.clear();
+      setStatus(Status.SUCCESS);
+      // Items will automatically update via liveQuery
+    } catch (error) {
+      setStatus(
+        `Error: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    }
+  };
+  console.log(itemsArray);
   return (
     <Box p={8}>
       <VStack gap={4} align="stretch">
         <Text fontSize="xl" fontWeight="bold">
           Import Purchase Data
         </Text>
-        <FileUpload.Root
-          accept={{ "application/json": [".json"] }}
-          onFileAccept={handleFileAccept}
-        >
-          <FileUpload.HiddenInput />
-          <FileUpload.Trigger asChild>
-            <Button colorPalette="black">Select JSON File</Button>
-          </FileUpload.Trigger>
-        </FileUpload.Root>
+        <HStack gap={3}>
+          <FileUpload.Root
+            accept={{ "application/json": [".json"] }}
+            onFileAccept={handleFileAccept}
+          >
+            <FileUpload.HiddenInput />
+            <FileUpload.Trigger asChild>
+              <Button colorPalette="black">Select JSON File</Button>
+            </FileUpload.Trigger>
+          </FileUpload.Root>
+          <Button
+            colorPalette="red"
+            onClick={handleClearDB}
+            disabled={
+              status === Status.READING_FILE ||
+              status === Status.PROCESSING_DATA
+            }
+          >
+            Clear Database
+          </Button>
+        </HStack>
         {status !== Status.IDLE && (
           <HStack gap={3}>
             {(status === Status.READING_FILE ||
@@ -397,6 +460,19 @@ function ItemsList() {
               {status}
             </Text>
           </HStack>
+        )}
+        {totalSpent !== undefined && (
+          <Box
+            p={4}
+            bg="blue.50"
+            borderRadius="md"
+            borderWidth="1px"
+            borderColor="blue.200"
+          >
+            <Text fontSize="lg" fontWeight="bold" color="blue.900">
+              Total Spent: £{formatNumber(totalSpent)}
+            </Text>
+          </Box>
         )}
         {(itemsArray.length > 0 || itemsLoading) && (
           <VStack gap={4} align="stretch" mt={8}>
