@@ -165,7 +165,13 @@ async function initDatabase(): Promise<Database> {
 function saveDatabase(): void {
   if (!db) return;
   const data = db.export();
-  const base64 = btoa(String.fromCharCode(...data));
+  // Convert Uint8Array to base64 in chunks to avoid stack overflow
+  // Build string character by character to avoid spreading large arrays
+  let binary = "";
+  for (let i = 0; i < data.length; i++) {
+    binary += String.fromCharCode(data[i]!);
+  }
+  const base64 = btoa(binary);
   localStorage.setItem(DB_KEY, base64);
 }
 
@@ -213,7 +219,8 @@ export async function query<T>(
 // Helper function to execute a single insert and return the last insert ID
 export async function insert(
   sql: string,
-  params: (string | number | null)[] = []
+  params: (string | number | null)[] = [],
+  skipSave: boolean = false
 ): Promise<number> {
   const database = await getDb();
   const stmt = database.prepare(sql);
@@ -222,21 +229,30 @@ export async function insert(
   const lastId = database.exec("SELECT last_insert_rowid() as id")[0]
     ?.values[0]?.[0] as number;
   stmt.free();
-  saveDatabase();
+  if (!skipSave) {
+    saveDatabase();
+  }
   return lastId;
 }
 
 // Helper function to execute multiple inserts in a transaction
 export async function insertMany(
   sql: string,
-  paramsArray: (string | number | null)[][]
+  paramsArray: (string | number | null)[][],
+  skipSave: boolean = false,
+  skipTransaction: boolean = false
 ): Promise<number[]> {
   const database = await getDb();
-  database.run("BEGIN TRANSACTION");
   const stmt = database.prepare(sql);
   const ids: number[] = [];
+  let transactionStarted = false;
 
   try {
+    if (!skipTransaction) {
+      database.run("BEGIN TRANSACTION");
+      transactionStarted = true;
+    }
+
     for (const params of paramsArray) {
       stmt.bind(params);
       stmt.step();
@@ -245,16 +261,58 @@ export async function insertMany(
         ?.values[0]?.[0] as number;
       ids.push(lastId);
     }
-    database.run("COMMIT");
-    saveDatabase();
+
+    if (!skipTransaction) {
+      database.run("COMMIT");
+      transactionStarted = false;
+      if (!skipSave) {
+        saveDatabase();
+      }
+    }
   } catch (error) {
-    database.run("ROLLBACK");
+    if (transactionStarted) {
+      try {
+        database.run("ROLLBACK");
+      } catch (rollbackError) {
+        // Ignore rollback errors (e.g., if transaction was already committed)
+      }
+    }
     throw error;
   } finally {
     stmt.free();
   }
 
   return ids;
+}
+
+// Helper function to run operations in a transaction and save only at the end
+export async function runInTransaction<T>(
+  operations: () => Promise<T>
+): Promise<T> {
+  const database = await getDb();
+  let transactionStarted = false;
+
+  try {
+    database.run("BEGIN TRANSACTION");
+    transactionStarted = true;
+
+    const result = await operations();
+
+    database.run("COMMIT");
+    transactionStarted = false;
+    saveDatabase();
+
+    return result;
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        database.run("ROLLBACK");
+      } catch (rollbackError) {
+        // Ignore rollback errors
+      }
+    }
+    throw error;
+  }
 }
 
 // Functions are already exported above

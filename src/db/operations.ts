@@ -1,4 +1,10 @@
-import { query, insert, insertMany, clearDatabase } from "../db";
+import {
+  query,
+  insert,
+  insertMany,
+  clearDatabase,
+  runInTransaction,
+} from "../db";
 
 // Types
 export interface PurchaseData {
@@ -61,94 +67,104 @@ export async function importPurchaseData(
     const text = await file.text();
     const data: PurchaseData = JSON.parse(text);
 
-    // Insert purchases in bulk and get their IDs
-    // Convert undefined values to null for SQL
-    const purchaseParams = data.purchases.map((purchase) => [
-      purchase.timestamp ?? null,
-      purchase.type ?? null,
-      purchase.says ?? null,
-      purchase.basketValueGross ?? null,
-      purchase.overallBasketSavings ?? null,
-      purchase.basketValueNet ?? null,
-      purchase.numberOfItems ?? null,
-      purchase.payment ? JSON.stringify(purchase.payment) : null,
-    ]);
-    const purchaseIds = await insertMany(
-      `INSERT INTO purchases (timestamp, type, says, basketValueGross, overallBasketSavings, basketValueNet, numberOfItems, payment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      purchaseParams
-    );
+    // Run everything in a single transaction to avoid stack overflow
+    await runInTransaction(async () => {
+      // Insert purchases in bulk and get their IDs
+      // Convert undefined values to null for SQL
+      const purchaseParams = data.purchases.map((purchase) => [
+        purchase.timestamp ?? null,
+        purchase.type ?? null,
+        purchase.says ?? null,
+        purchase.basketValueGross ?? null,
+        purchase.overallBasketSavings ?? null,
+        purchase.basketValueNet ?? null,
+        purchase.numberOfItems ?? null,
+        purchase.payment ? JSON.stringify(purchase.payment) : null,
+      ]);
+      const purchaseIds = await insertMany(
+        `INSERT INTO purchases (timestamp, type, says, basketValueGross, overallBasketSavings, basketValueNet, numberOfItems, payment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        purchaseParams,
+        true, // skip save - will save at end of transaction
+        true // skip transaction - already in a transaction
+      );
 
-    // Process each purchase's items
-    for (
-      let purchaseIndex = 0;
-      purchaseIndex < data.purchases.length;
-      purchaseIndex++
-    ) {
-      const purchase = data.purchases[purchaseIndex];
-      const purchaseId = purchaseIds[purchaseIndex]!;
+      // Process each purchase's items
+      for (
+        let purchaseIndex = 0;
+        purchaseIndex < data.purchases.length;
+        purchaseIndex++
+      ) {
+        const purchase = data.purchases[purchaseIndex];
+        const purchaseId = purchaseIds[purchaseIndex]!;
 
-      for (const item of purchase.items) {
-        // Find or create item by name (case-insensitive)
-        const existingItems = await query<{ id: number; name: string }>(
-          `SELECT id, name FROM items WHERE LOWER(name) = LOWER(?)`,
-          [item.name]
-        );
-
-        let itemId: number;
-        if (existingItems.length > 0) {
-          itemId = existingItems[0]!.id;
-        } else {
-          itemId = await insert(`INSERT INTO items (name) VALUES (?)`, [
-            item.name,
-          ]);
-        }
-
-        // Find or create price by item name and price value
-        const existingPrices = await query<{
-          id: number;
-          itemId: number;
-          price: number;
-        }>(
-          `SELECT p.id, p.itemId, p.price 
-           FROM prices p 
-           JOIN items i ON p.itemId = i.id 
-           WHERE LOWER(i.name) = LOWER(?) AND p.price = ?`,
-          [item.name, item.price]
-        );
-
-        let priceId: number;
-        if (existingPrices.length > 0) {
-          priceId = existingPrices[0]!.id;
-        } else {
-          priceId = await insert(
-            `INSERT INTO prices (itemId, price) VALUES (?, ?)`,
-            [itemId, item.price]
+        for (const item of purchase.items) {
+          // Find or create item by name (case-insensitive)
+          const existingItems = await query<{ id: number; name: string }>(
+            `SELECT id, name FROM items WHERE LOWER(name) = LOWER(?)`,
+            [item.name]
           );
-        }
 
-        // Link price to purchase (many-to-many)
-        try {
+          let itemId: number;
+          if (existingItems.length > 0) {
+            itemId = existingItems[0]!.id;
+          } else {
+            itemId = await insert(
+              `INSERT INTO items (name) VALUES (?)`,
+              [item.name],
+              true // skip save
+            );
+          }
+
+          // Find or create price by item name and price value
+          const existingPrices = await query<{
+            id: number;
+            itemId: number;
+            price: number;
+          }>(
+            `SELECT p.id, p.itemId, p.price 
+             FROM prices p 
+             JOIN items i ON p.itemId = i.id 
+             WHERE LOWER(i.name) = LOWER(?) AND p.price = ?`,
+            [item.name, item.price]
+          );
+
+          let priceId: number;
+          if (existingPrices.length > 0) {
+            priceId = existingPrices[0]!.id;
+          } else {
+            priceId = await insert(
+              `INSERT INTO prices (itemId, price) VALUES (?, ?)`,
+              [itemId, item.price],
+              true // skip save
+            );
+          }
+
+          // Link price to purchase (many-to-many)
+          try {
+            await insert(
+              `INSERT INTO price_purchases (priceId, purchaseId) VALUES (?, ?)`,
+              [priceId, purchaseId],
+              true // skip save
+            );
+          } catch (error) {
+            // Ignore if already exists (unique constraint)
+          }
+
+          // Insert amount record (handle undefined weight/volume as NULL)
           await insert(
-            `INSERT INTO price_purchases (priceId, purchaseId) VALUES (?, ?)`,
-            [priceId, purchaseId]
+            `INSERT INTO amounts (purchaseId, itemId, weight, volume, quantity) VALUES (?, ?, ?, ?, ?)`,
+            [
+              purchaseId,
+              itemId,
+              item.weight ?? null,
+              item.volume ?? null,
+              item.quantity,
+            ],
+            true // skip save
           );
-        } catch (error) {
-          // Ignore if already exists (unique constraint)
         }
-
-        // Insert amount record (handle undefined weight/volume as NULL)
-        await insert(
-          `INSERT INTO amounts (purchaseId, itemId, weight, volume, quantity) VALUES (?, ?, ?, ?, ?)`,
-          [
-            purchaseId,
-            itemId,
-            item.weight ?? null,
-            item.volume ?? null,
-            item.quantity,
-          ]
-        );
       }
-    }
+    });
 
     // Trigger a refresh by dispatching db-update event
     window.dispatchEvent(new Event("db-update"));
