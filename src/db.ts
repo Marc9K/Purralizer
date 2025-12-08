@@ -41,6 +41,13 @@ export interface PricePurchase {
   purchaseId: number;
 }
 
+// Re-export types from operations for convenience
+export type {
+  ItemWithStats,
+  PurchaseHistoryItem,
+  ChartDataPoint,
+} from "./db/operations";
+
 let SQL: SqlJsStatic | null = null;
 let db: Database | null = null;
 let dbInitialized = false;

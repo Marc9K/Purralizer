@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import {
   Button,
   VStack,
@@ -8,17 +8,23 @@ import {
   FileUpload,
   ProgressCircle,
   HStack,
-  Card,
   SimpleGrid,
-  Stack,
   Input,
   Select,
   Portal,
   Switch,
   createListCollection,
 } from "@chakra-ui/react";
-import { query, insert, insertMany, clearDatabase, type Item } from "./db";
+import {
+  importPurchaseData,
+  clearAllData,
+  getItemsWithStats,
+  getTotalSpent,
+  getTotalItemsCount,
+  type ItemWithStats,
+} from "./db/operations";
 import ItemDetail from "./ItemDetail";
+import ItemCard from "./components/ItemCard";
 
 // Custom hook to use queries with React (polling-based since sql.js doesn't have liveQuery)
 function useQuery<T>(
@@ -57,16 +63,6 @@ function useQuery<T>(
   return { data: value, loading };
 }
 
-interface ItemWithStats extends Item {
-  id: number;
-  name: string;
-  latestPrice: number | null;
-  totalQuantity: number;
-  totalSpent: number;
-  weight?: number;
-  volume?: number;
-}
-
 const formatNumber = (num: number): string => {
   // Check if 3rd decimal is significant
   const twoDecimal = Math.round(num * 100) / 100;
@@ -86,32 +82,6 @@ const Status = {
   SUCCESS: "Successfully imported purchases!",
 } as const;
 
-interface PurchaseData {
-  requestId: string;
-  purchases: Array<{
-    timestamp: string;
-    type: string;
-    says: string;
-    basketValueGross: number;
-    overallBasketSavings: number;
-    basketValueNet: number;
-    numberOfItems: number;
-    payment: Array<{
-      type: string;
-      category?: string;
-      amount: number;
-    }>;
-    items: Array<{
-      name: string;
-      quantity: number;
-      weight: number;
-      price: number;
-      volume: number;
-    }>;
-  }>;
-  orders: any[];
-}
-
 type SortField = "totalQuantity" | "totalSpent" | "latestPrice" | "name";
 type SortDirection = "asc" | "desc";
 
@@ -125,111 +95,36 @@ const sortFieldOptions = createListCollection({
 });
 
 function ItemsList() {
-  const navigate = useNavigate();
   const [status, setStatus] = useState<string>(Status.IDLE);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortField, setSortField] = useState<string[]>(["totalSpent"]);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
-  // Query for items with stats - single SQL query with all calculations
+  // Query for items with stats
+  const currentSortField = (sortField[0] || "totalSpent") as SortField;
   const { data: items, loading: itemsLoading } = useQuery<
     ItemWithStats[]
   >(async () => {
-    // Build SQL query with filtering, stats calculation, and sorting
-    const currentSortField = (sortField[0] || "totalSpent") as SortField;
-    const currentSortDirection = sortDirection || "desc";
-
-    let orderByClause = "";
-    switch (currentSortField) {
-      case "totalQuantity":
-        orderByClause = "ORDER BY totalQuantity";
-        break;
-      case "totalSpent":
-        orderByClause = "ORDER BY totalSpent";
-        break;
-      case "latestPrice":
-        orderByClause = "ORDER BY latestPrice";
-        break;
-      case "name":
-      default:
-        orderByClause = "ORDER BY LOWER(i.name)";
-        break;
-    }
-    orderByClause += currentSortDirection === "asc" ? " ASC" : " DESC";
-
-    const searchCondition =
-      searchQuery && searchQuery.trim() ? `AND LOWER(i.name) LIKE ?` : "";
-    const searchParam =
-      searchQuery && searchQuery.trim()
-        ? [`%${searchQuery.toLowerCase().trim()}%`]
-        : [];
-
-    const itemsWithStats = await query<ItemWithStats>(
-      `SELECT 
-        i.id,
-        i.name,
-        MAX(CASE 
-          WHEN a.weight IS NOT NULL AND a.weight > 0 AND a.weight != 1 
-          THEN a.weight 
-        END) as weight,
-        MAX(CASE 
-          WHEN a.volume IS NOT NULL AND a.volume > 0 AND a.volume != 1 
-          THEN a.volume 
-        END) as volume,
-        COALESCE(SUM(a.quantity), 0) as totalQuantity,
-        COALESCE(SUM(p.price * COALESCE(a.quantity, 1)), 0) as totalSpent,
-        (
-          SELECT p2.price 
-          FROM price_purchases pp2
-          JOIN prices p2 ON pp2.priceId = p2.id
-          JOIN purchases pur2 ON pp2.purchaseId = pur2.id
-          WHERE p2.itemId = i.id
-          ORDER BY pur2.timestamp DESC
-          LIMIT 1
-        ) as latestPrice
-      FROM items i
-      LEFT JOIN price_purchases pp ON pp.priceId IN (
-        SELECT id FROM prices WHERE itemId = i.id
-      )
-      LEFT JOIN prices p ON pp.priceId = p.id
-      LEFT JOIN purchases pur ON pp.purchaseId = pur.id
-      LEFT JOIN amounts a ON a.purchaseId = pur.id AND a.itemId = i.id
-      WHERE 1=1 ${searchCondition}
-      GROUP BY i.id, i.name
-      ${orderByClause}`,
-      searchParam
+    return await getItemsWithStats(
+      searchQuery,
+      currentSortField,
+      sortDirection
     );
-
-    // Convert null weight/volume to undefined and ensure proper types
-    return itemsWithStats.map((item) => ({
-      ...item,
-      weight: item.weight ?? undefined,
-      volume: item.volume ?? undefined,
-      latestPrice: item.latestPrice ?? null,
-      totalQuantity: item.totalQuantity ?? 0,
-      totalSpent: item.totalSpent ?? 0,
-    }));
   }, [searchQuery, sortField, sortDirection]);
 
   const itemsArray = items ?? [];
 
   // Query for total count
-  const { data: totalItemsCount } = useQuery<number>(async () => {
-    const result = await query<{ count: number }>(
-      `SELECT COUNT(*) as count FROM items`
-    );
-    return result[0]?.count ?? 0;
-  }, []);
+  const { data: totalItemsCount } = useQuery<number>(
+    async () => await getTotalItemsCount(),
+    []
+  );
 
   // Query for total spent across all purchases
-  const { data: totalSpent } = useQuery<number>(async () => {
-    const result = await query<{ total: number | null }>(
-      `SELECT SUM(p.price) as total 
-       FROM price_purchases pp
-       JOIN prices p ON pp.priceId = p.id`
-    );
-    return result[0]?.total ?? 0;
-  }, []);
+  const { data: totalSpent } = useQuery<number>(
+    async () => await getTotalSpent(),
+    []
+  );
 
   const handleFileAccept = async (details: { files: File[] }) => {
     const file = details.files[0];
@@ -237,105 +132,12 @@ function ItemsList() {
 
     setStatus(Status.READING_FILE);
 
-    try {
-      const text = await file.text();
-      const data: PurchaseData = JSON.parse(text);
+    const result = await importPurchaseData(file);
 
-      setStatus(Status.PROCESSING_DATA);
-
-      // Insert purchases in bulk and get their IDs
-      // Convert undefined values to null for SQL
-      const purchaseParams = data.purchases.map((purchase) => [
-        purchase.timestamp ?? null,
-        purchase.type ?? null,
-        purchase.says ?? null,
-        purchase.basketValueGross ?? null,
-        purchase.overallBasketSavings ?? null,
-        purchase.basketValueNet ?? null,
-        purchase.numberOfItems ?? null,
-        purchase.payment ? JSON.stringify(purchase.payment) : null,
-      ]);
-      const purchaseIds = await insertMany(
-        `INSERT INTO purchases (timestamp, type, says, basketValueGross, overallBasketSavings, basketValueNet, numberOfItems, payment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        purchaseParams
-      );
-      // Process each purchase's items
-      for (
-        let purchaseIndex = 0;
-        purchaseIndex < data.purchases.length;
-        purchaseIndex++
-      ) {
-        const purchase = data.purchases[purchaseIndex];
-        const purchaseId = purchaseIds[purchaseIndex]!;
-
-        for (const item of purchase.items) {
-          // Find or create item by name (case-insensitive)
-          const existingItems = await query<{ id: number; name: string }>(
-            `SELECT id, name FROM items WHERE LOWER(name) = LOWER(?)`,
-            [item.name]
-          );
-
-          let itemId: number;
-          if (existingItems.length > 0) {
-            itemId = existingItems[0]!.id;
-          } else {
-            itemId = await insert(`INSERT INTO items (name) VALUES (?)`, [
-              item.name,
-            ]);
-          }
-
-          // Find or create price by item name and price value
-          const existingPrices = await query<{
-            id: number;
-            itemId: number;
-            price: number;
-          }>(
-            `SELECT p.id, p.itemId, p.price 
-             FROM prices p 
-             JOIN items i ON p.itemId = i.id 
-             WHERE LOWER(i.name) = LOWER(?) AND p.price = ?`,
-            [item.name, item.price]
-          );
-
-          let priceId: number;
-          if (existingPrices.length > 0) {
-            priceId = existingPrices[0]!.id;
-          } else {
-            priceId = await insert(
-              `INSERT INTO prices (itemId, price) VALUES (?, ?)`,
-              [itemId, item.price]
-            );
-          }
-
-          // Link price to purchase (many-to-many)
-          try {
-            await insert(
-              `INSERT INTO price_purchases (priceId, purchaseId) VALUES (?, ?)`,
-              [priceId, purchaseId]
-            );
-          } catch (error) {
-            // Ignore if already exists (unique constraint)
-          }
-
-          // Insert amount record (handle undefined weight/volume as NULL)
-          await insert(
-            `INSERT INTO amounts (purchaseId, itemId, weight, volume, quantity) VALUES (?, ?, ?, ?, ?)`,
-            [
-              purchaseId,
-              itemId,
-              item.weight ?? null,
-              item.volume ?? null,
-              item.quantity,
-            ]
-          );
-        }
-      }
-
+    if (result.success) {
       setStatus(Status.SUCCESS);
-      // Trigger a refresh by updating a dependency
-      window.dispatchEvent(new Event("db-update"));
-    } catch (error) {
-      setStatus(`Error: ${String(error)}`);
+    } else {
+      setStatus(`Error: ${result.error || "Unknown error"}`);
     }
   };
 
@@ -348,14 +150,13 @@ function ItemsList() {
       return;
     }
 
-    try {
-      setStatus(Status.PROCESSING_DATA);
-      await clearDatabase();
+    setStatus(Status.PROCESSING_DATA);
+    const result = await clearAllData();
+
+    if (result.success) {
       setStatus(Status.SUCCESS);
-      // Trigger a refresh
-      window.dispatchEvent(new Event("db-update"));
-    } catch (error) {
-      setStatus(`Error: ${String(error)}`);
+    } else {
+      setStatus(`Error: ${result.error || "Unknown error"}`);
     }
   };
   console.log(itemsArray);
@@ -516,48 +317,7 @@ function ItemsList() {
             ) : (
               <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={4}>
                 {itemsArray.map((item) => (
-                  <Card.Root
-                    key={item.id}
-                    variant="outline"
-                    cursor="pointer"
-                    onClick={() => navigate(`/item/${item.id}`)}
-                    _hover={{ borderColor: "blue.500" }}
-                  >
-                    <Card.Body>
-                      <Card.Title>{item.name}</Card.Title>
-                      <Card.Description>
-                        <Stack gap={2} mt={2}>
-                          <HStack gap={2}>
-                            {item.weight !== undefined && item.weight > 0 && (
-                              <Text fontSize="sm" color="fg.muted">
-                                Weight: {formatNumber(item.weight)}g
-                              </Text>
-                            )}
-                            {item.volume !== undefined && item.volume > 0 && (
-                              <Text fontSize="sm" color="fg.muted">
-                                Volume: {formatNumber(item.volume)}L
-                              </Text>
-                            )}
-                          </HStack>
-                          {item.latestPrice !== null && (
-                            <Text fontSize="sm" fontWeight="medium">
-                              Latest Price: £{formatNumber(item.latestPrice)}
-                            </Text>
-                          )}
-                          {item.totalQuantity > 0 && (
-                            <Text fontSize="sm" color="fg.muted">
-                              Total Bought: {item.totalQuantity}
-                            </Text>
-                          )}
-                          {item.totalSpent > 0 && (
-                            <Text fontSize="sm" color="fg.muted">
-                              Total Spent: £{formatNumber(item.totalSpent)}
-                            </Text>
-                          )}
-                        </Stack>
-                      </Card.Description>
-                    </Card.Body>
-                  </Card.Root>
+                  <ItemCard key={item.id} item={item} />
                 ))}
               </SimpleGrid>
             )}
