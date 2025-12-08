@@ -17,12 +17,11 @@ import {
   Switch,
   createListCollection,
 } from "@chakra-ui/react";
-import { liveQuery } from "dexie";
-import { db, type Item } from "./db";
+import { query, insert, insertMany, clearDatabase, type Item } from "./db";
 import ItemDetail from "./ItemDetail";
 
-// Custom hook to use liveQuery with React
-function useLiveQuery<T>(
+// Custom hook to use queries with React (polling-based since sql.js doesn't have liveQuery)
+function useQuery<T>(
   querier: () => Promise<T> | T,
   deps: unknown[] = []
 ): { data: T | undefined; loading: boolean } {
@@ -31,19 +30,27 @@ function useLiveQuery<T>(
 
   useEffect(() => {
     setLoading(true);
-    const observable = liveQuery(querier);
-    const subscription = observable.subscribe({
-      next: (result) => {
+    const fetchData = async () => {
+      try {
+        const result = await querier();
         setValue(result);
         setLoading(false);
-      },
-      error: (error) => {
-        console.error("LiveQuery error:", error);
+      } catch (error) {
+        console.error("Query error:", error);
         setLoading(false);
-      },
-    });
+      }
+    };
+    fetchData();
 
-    return () => subscription.unsubscribe();
+    // Listen for database updates
+    const handleUpdate = () => {
+      fetchData();
+    };
+    window.addEventListener("db-update", handleUpdate);
+
+    return () => {
+      window.removeEventListener("db-update", handleUpdate);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
@@ -51,9 +58,13 @@ function useLiveQuery<T>(
 }
 
 interface ItemWithStats extends Item {
+  id: number;
+  name: string;
   latestPrice: number | null;
   totalQuantity: number;
   totalSpent: number;
+  weight?: number;
+  volume?: number;
 }
 
 const formatNumber = (num: number): string => {
@@ -120,124 +131,104 @@ function ItemsList() {
   const [sortField, setSortField] = useState<string[]>(["totalSpent"]);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
-  // Live query for items with stats
-  const { data: items, loading: itemsLoading } = useLiveQuery<
+  // Query for items with stats - single SQL query with all calculations
+  const { data: items, loading: itemsLoading } = useQuery<
     ItemWithStats[]
   >(async () => {
-    let allItems;
-    if (searchQuery && searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      // Use Dexie filter for case-insensitive search
-      allItems = await db.items
-        .filter((item) => item.name.toLowerCase().includes(query))
-        .toArray();
-    } else {
-      allItems = await db.items.toArray();
-    }
-
-    // Calculate stats for each item
-    const itemsWithStats = await Promise.all(
-      allItems.map(async (item) => {
-        if (!item.id)
-          return {
-            ...item,
-            latestPrice: null,
-            totalQuantity: 0,
-            totalSpent: 0,
-          };
-
-        // Get all prices for this item
-        const prices = await db.prices
-          .where("itemId")
-          .equals(item.id)
-          .toArray();
-
-        if (prices.length === 0) {
-          return {
-            ...item,
-            latestPrice: null,
-            totalQuantity: 0,
-            totalSpent: 0,
-          };
-        }
-
-        // Get purchase IDs and calculate totals
-        const purchaseIds = prices.map((p) => p.purchaseId);
-        const totalQuantity = prices.length;
-        const totalSpent = prices.reduce((sum, p) => sum + p.price, 0);
-
-        // Get purchases sorted by timestamp descending to find latest
-        const purchases = await db.purchases
-          .where("id")
-          .anyOf(purchaseIds)
-          .sortBy("timestamp");
-
-        // Reverse to get descending order (most recent first)
-        purchases.reverse();
-
-        // Find the price for the most recent purchase
-        const latestPurchase = purchases[0];
-        const latestPrice = latestPurchase?.id
-          ? prices.find((p) => p.purchaseId === latestPurchase.id)?.price ??
-            null
-          : null;
-
-        return {
-          ...item,
-          latestPrice,
-          totalQuantity,
-          totalSpent,
-        };
-      })
-    );
-
-    // Sort items
+    // Build SQL query with filtering, stats calculation, and sorting
     const currentSortField = (sortField[0] || "totalSpent") as SortField;
     const currentSortDirection = sortDirection || "desc";
 
-    itemsWithStats.sort((a, b) => {
-      let aValue: number | string | null;
-      let bValue: number | string | null;
+    let orderByClause = "";
+    switch (currentSortField) {
+      case "totalQuantity":
+        orderByClause = "ORDER BY totalQuantity";
+        break;
+      case "totalSpent":
+        orderByClause = "ORDER BY totalSpent";
+        break;
+      case "latestPrice":
+        orderByClause = "ORDER BY latestPrice";
+        break;
+      case "name":
+      default:
+        orderByClause = "ORDER BY LOWER(i.name)";
+        break;
+    }
+    orderByClause += currentSortDirection === "asc" ? " ASC" : " DESC";
 
-      switch (currentSortField) {
-        case "totalQuantity":
-          aValue = a.totalQuantity;
-          bValue = b.totalQuantity;
-          break;
-        case "totalSpent":
-          aValue = a.totalSpent;
-          bValue = b.totalSpent;
-          break;
-        case "latestPrice":
-          aValue = a.latestPrice ?? 0;
-          bValue = b.latestPrice ?? 0;
-          break;
-        case "name":
-        default:
-          aValue = a.name.toLowerCase();
-          bValue = b.name.toLowerCase();
-          break;
-      }
+    const searchCondition =
+      searchQuery && searchQuery.trim() ? `AND LOWER(i.name) LIKE ?` : "";
+    const searchParam =
+      searchQuery && searchQuery.trim()
+        ? [`%${searchQuery.toLowerCase().trim()}%`]
+        : [];
 
-      if (aValue < bValue) return currentSortDirection === "asc" ? -1 : 1;
-      if (aValue > bValue) return currentSortDirection === "asc" ? 1 : -1;
-      return 0;
-    });
+    const itemsWithStats = await query<ItemWithStats>(
+      `SELECT 
+        i.id,
+        i.name,
+        MAX(CASE 
+          WHEN a.weight IS NOT NULL AND a.weight > 0 AND a.weight != 1 
+          THEN a.weight 
+        END) as weight,
+        MAX(CASE 
+          WHEN a.volume IS NOT NULL AND a.volume > 0 AND a.volume != 1 
+          THEN a.volume 
+        END) as volume,
+        COALESCE(SUM(a.quantity), 0) as totalQuantity,
+        COALESCE(SUM(p.price * COALESCE(a.quantity, 1)), 0) as totalSpent,
+        (
+          SELECT p2.price 
+          FROM price_purchases pp2
+          JOIN prices p2 ON pp2.priceId = p2.id
+          JOIN purchases pur2 ON pp2.purchaseId = pur2.id
+          WHERE p2.itemId = i.id
+          ORDER BY pur2.timestamp DESC
+          LIMIT 1
+        ) as latestPrice
+      FROM items i
+      LEFT JOIN price_purchases pp ON pp.priceId IN (
+        SELECT id FROM prices WHERE itemId = i.id
+      )
+      LEFT JOIN prices p ON pp.priceId = p.id
+      LEFT JOIN purchases pur ON pp.purchaseId = pur.id
+      LEFT JOIN amounts a ON a.purchaseId = pur.id AND a.itemId = i.id
+      WHERE 1=1 ${searchCondition}
+      GROUP BY i.id, i.name
+      ${orderByClause}`,
+      searchParam
+    );
 
-    return itemsWithStats;
+    // Convert null weight/volume to undefined and ensure proper types
+    return itemsWithStats.map((item) => ({
+      ...item,
+      weight: item.weight ?? undefined,
+      volume: item.volume ?? undefined,
+      latestPrice: item.latestPrice ?? null,
+      totalQuantity: item.totalQuantity ?? 0,
+      totalSpent: item.totalSpent ?? 0,
+    }));
   }, [searchQuery, sortField, sortDirection]);
 
   const itemsArray = items ?? [];
 
-  // Live query for total count
-  const { data: totalItemsCount } = useLiveQuery<number>(async () => {
-    return await db.items.count();
+  // Query for total count
+  const { data: totalItemsCount } = useQuery<number>(async () => {
+    const result = await query<{ count: number }>(
+      `SELECT COUNT(*) as count FROM items`
+    );
+    return result[0]?.count ?? 0;
   }, []);
 
-  // Live query for total spent across all purchases
-  const { data: totalSpent } = useLiveQuery<number>(async () => {
-    const allPrices = await db.prices.toArray();
-    return allPrices.reduce((sum, p) => sum + p.price, 0);
+  // Query for total spent across all purchases
+  const { data: totalSpent } = useQuery<number>(async () => {
+    const result = await query<{ total: number | null }>(
+      `SELECT SUM(p.price) as total 
+       FROM price_purchases pp
+       JOIN prices p ON pp.priceId = p.id`
+    );
+    return result[0]?.total ?? 0;
   }, []);
 
   const handleFileAccept = async (details: { files: File[] }) => {
@@ -252,138 +243,99 @@ function ItemsList() {
 
       setStatus(Status.PROCESSING_DATA);
 
-      // Prepare all purchases for bulk insert
-      const purchasesToAdd = data.purchases.map((purchase) => ({
-        timestamp: purchase.timestamp,
-        type: purchase.type,
-        says: purchase.says,
-        basketValueGross: purchase.basketValueGross,
-        overallBasketSavings: purchase.overallBasketSavings,
-        basketValueNet: purchase.basketValueNet,
-        numberOfItems: purchase.numberOfItems,
-        payment: purchase.payment,
-      }));
+      // Insert purchases in bulk and get their IDs
+      // Convert undefined values to null for SQL
+      const purchaseParams = data.purchases.map((purchase) => [
+        purchase.timestamp ?? null,
+        purchase.type ?? null,
+        purchase.says ?? null,
+        purchase.basketValueGross ?? null,
+        purchase.overallBasketSavings ?? null,
+        purchase.basketValueNet ?? null,
+        purchase.numberOfItems ?? null,
+        purchase.payment ? JSON.stringify(purchase.payment) : null,
+      ]);
+      const purchaseIds = await insertMany(
+        `INSERT INTO purchases (timestamp, type, says, basketValueGross, overallBasketSavings, basketValueNet, numberOfItems, payment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        purchaseParams
+      );
+      // Process each purchase's items
+      for (
+        let purchaseIndex = 0;
+        purchaseIndex < data.purchases.length;
+        purchaseIndex++
+      ) {
+        const purchase = data.purchases[purchaseIndex];
+        const purchaseId = purchaseIds[purchaseIndex]!;
 
-      // Bulk add purchases and get their IDs
-      const purchaseIds = (await db.purchases.bulkAdd(purchasesToAdd, {
-        allKeys: true,
-      })) as unknown as number[];
+        for (const item of purchase.items) {
+          // Find or create item by name (case-insensitive)
+          const existingItems = await query<{ id: number; name: string }>(
+            `SELECT id, name FROM items WHERE LOWER(name) = LOWER(?)`,
+            [item.name]
+          );
 
-      // Collect all unique items (deduplicate by name+weight+volume)
-      const itemMap = new Map<
-        string,
-        { name: string; weight: number; volume: number }
-      >();
-      const itemToPriceMap = new Map<
-        string,
-        Array<{ purchaseIndex: number; price: number }>
-      >();
-
-      data.purchases.forEach((purchase, purchaseIndex) => {
-        purchase.items.forEach((item) => {
-          // For items with "loose" in the name, use only name as key (ignore weight/volume)
-          const isLoose = item.name.toLowerCase().includes("loose");
-          const itemKey = isLoose
-            ? item.name.toLowerCase()
-            : `${item.name}|${item.weight}|${item.volume}`;
-
-          if (!itemMap.has(itemKey)) {
-            itemMap.set(itemKey, {
-              name: item.name,
-              weight: item.weight,
-              volume: item.volume,
-            });
+          let itemId: number;
+          if (existingItems.length > 0) {
+            itemId = existingItems[0]!.id;
+          } else {
+            itemId = await insert(`INSERT INTO items (name) VALUES (?)`, [
+              item.name,
+            ]);
           }
-          if (!itemToPriceMap.has(itemKey)) {
-            itemToPriceMap.set(itemKey, []);
+
+          // Find or create price by item name and price value
+          const existingPrices = await query<{
+            id: number;
+            itemId: number;
+            price: number;
+          }>(
+            `SELECT p.id, p.itemId, p.price 
+             FROM prices p 
+             JOIN items i ON p.itemId = i.id 
+             WHERE LOWER(i.name) = LOWER(?) AND p.price = ?`,
+            [item.name, item.price]
+          );
+
+          let priceId: number;
+          if (existingPrices.length > 0) {
+            priceId = existingPrices[0]!.id;
+          } else {
+            priceId = await insert(
+              `INSERT INTO prices (itemId, price) VALUES (?, ?)`,
+              [itemId, item.price]
+            );
           }
-          itemToPriceMap.get(itemKey)!.push({
-            purchaseIndex,
-            price: item.price,
-          });
-        });
-      });
 
-      // Check which items already exist in the database
-      const itemsToAdd: Array<{
-        name: string;
-        weight: number;
-        volume: number;
-      }> = [];
-      const existingItemMap = new Map<string, number>();
+          // Link price to purchase (many-to-many)
+          try {
+            await insert(
+              `INSERT INTO price_purchases (priceId, purchaseId) VALUES (?, ?)`,
+              [priceId, purchaseId]
+            );
+          } catch (error) {
+            // Ignore if already exists (unique constraint)
+          }
 
-      for (const [itemKey, item] of itemMap.entries()) {
-        const isLoose = item.name.toLowerCase().includes("loose");
-        let existingItem;
-
-        if (isLoose) {
-          // For loose items, search by name only (case-insensitive)
-          const allItems = await db.items
-            .filter(
-              (dbItem) => dbItem.name.toLowerCase() === item.name.toLowerCase()
-            )
-            .toArray();
-          existingItem = allItems[0];
-        } else {
-          // For regular items, use compound index
-          existingItem = await db.items
-            .where("[name+weight+volume]")
-            .equals([item.name, item.weight, item.volume])
-            .first();
-        }
-
-        if (existingItem && existingItem.id) {
-          existingItemMap.set(itemKey, existingItem.id);
-        } else {
-          itemsToAdd.push(item);
-        }
-      }
-
-      // Bulk add new items and get their IDs
-      if (itemsToAdd.length > 0) {
-        const newItemIds = (await db.items.bulkAdd(itemsToAdd, {
-          allKeys: true,
-        })) as unknown as number[];
-
-        // Map new items to their IDs using the same key format as itemMap
-        itemsToAdd.forEach((item, index) => {
-          const isLoose = item.name.toLowerCase().includes("loose");
-          const itemKey = isLoose
-            ? item.name.toLowerCase()
-            : `${item.name}|${item.weight}|${item.volume}`;
-          existingItemMap.set(itemKey, newItemIds[index]!);
-        });
-      }
-
-      // Prepare all prices for bulk insert
-      const pricesToAdd: Array<{
-        purchaseId: number;
-        itemId: number;
-        price: number;
-      }> = [];
-
-      for (const [itemKey, prices] of itemToPriceMap.entries()) {
-        const itemId = existingItemMap.get(itemKey);
-        if (itemId) {
-          prices.forEach(({ purchaseIndex, price }) => {
-            pricesToAdd.push({
-              purchaseId: purchaseIds[purchaseIndex],
+          // Insert amount record (handle undefined weight/volume as NULL)
+          await insert(
+            `INSERT INTO amounts (purchaseId, itemId, weight, volume, quantity) VALUES (?, ?, ?, ?, ?)`,
+            [
+              purchaseId,
               itemId,
-              price,
-            });
-          });
+              item.weight ?? null,
+              item.volume ?? null,
+              item.quantity,
+            ]
+          );
         }
       }
-
-      // Bulk add prices
-      await db.prices.bulkAdd(pricesToAdd);
 
       setStatus(Status.SUCCESS);
-      // Items will automatically update via liveQuery
+      // Trigger a refresh by updating a dependency
+      window.dispatchEvent(new Event("db-update"));
     } catch (error) {
-      setStatus(
-        `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
+      setStatus(`Error: ${String(error)}`);
     }
   };
 
@@ -398,15 +350,12 @@ function ItemsList() {
 
     try {
       setStatus(Status.PROCESSING_DATA);
-      await db.prices.clear();
-      await db.items.clear();
-      await db.purchases.clear();
+      await clearDatabase();
       setStatus(Status.SUCCESS);
-      // Items will automatically update via liveQuery
+      // Trigger a refresh
+      window.dispatchEvent(new Event("db-update"));
     } catch (error) {
-      setStatus(
-        `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
+      setStatus(`Error: ${String(error)}`);
     }
   };
   console.log(itemsArray);
@@ -438,10 +387,10 @@ function ItemsList() {
           </Button>
         </HStack>
         {status !== Status.IDLE && (
-          <HStack gap={3}>
+          <HStack gap={3} align="center">
             {(status === Status.READING_FILE ||
               status === Status.PROCESSING_DATA) && (
-              <ProgressCircle.Root value={null} size="sm">
+              <ProgressCircle.Root value={null} size="md">
                 <ProgressCircle.Circle>
                   <ProgressCircle.Track />
                   <ProgressCircle.Range />
@@ -449,6 +398,8 @@ function ItemsList() {
               </ProgressCircle.Root>
             )}
             <Text
+              fontSize="md"
+              fontWeight="medium"
               color={
                 status.startsWith("Error")
                   ? "red.500"
@@ -461,7 +412,7 @@ function ItemsList() {
             </Text>
           </HStack>
         )}
-        {totalSpent !== undefined && (
+        {totalSpent !== undefined && totalSpent > 0 && (
           <Box
             p={4}
             bg="blue.50"
@@ -577,12 +528,12 @@ function ItemsList() {
                       <Card.Description>
                         <Stack gap={2} mt={2}>
                           <HStack gap={2}>
-                            {item.weight > 0 && (
+                            {item.weight !== undefined && item.weight > 0 && (
                               <Text fontSize="sm" color="fg.muted">
                                 Weight: {formatNumber(item.weight)}g
                               </Text>
                             )}
-                            {item.volume > 0 && (
+                            {item.volume !== undefined && item.volume > 0 && (
                               <Text fontSize="sm" color="fg.muted">
                                 Volume: {formatNumber(item.volume)}L
                               </Text>
