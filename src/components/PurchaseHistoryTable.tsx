@@ -5,8 +5,9 @@ import {
   Text,
   Table,
   ProgressCircle,
+  Tooltip,
 } from "@chakra-ui/react";
-import { formatNumber, formatDateTime } from "../utils/format";
+import { formatNumber, formatDateTime, formatShortDate } from "../utils/format";
 import type { PurchaseHistoryItem } from "../db/operations";
 
 interface PurchaseHistoryTableProps {
@@ -18,21 +19,45 @@ export default function PurchaseHistoryTable({
   purchaseHistory,
   loading,
 }: PurchaseHistoryTableProps) {
-  // Check if all weights and volumes are the same number
-  const showOnlyWeight = useMemo(() => {
+  // Check if we should show weight column (at least some are non-1/0/null)
+  const showWeightColumn = useMemo(() => {
     if (!purchaseHistory || purchaseHistory.length === 0) return false;
+    return purchaseHistory.some(
+      (p) => p.weight !== null && p.weight !== 0 && p.weight !== 1
+    );
+  }, [purchaseHistory]);
 
-    const validWeights = purchaseHistory
-      .map((p) => p.weight)
-      .filter((w) => w !== null && w !== 0 && w !== 1) as number[];
-    const validVolumes = purchaseHistory
-      .map((p) => p.volume)
-      .filter((v) => v !== null && v !== 0 && v !== 1) as number[];
+  // Check if we should show quantity column (at least some are non-1/0/null)
+  // Only show if quantities are different from weights
+  const showQuantityColumn = useMemo(() => {
+    if (!purchaseHistory || purchaseHistory.length === 0) return false;
+    if (!showWeightColumn) {
+      // If no weight column, show quantity if valid
+      return purchaseHistory.some(
+        (p) =>
+          p.trueQuantity !== null &&
+          p.trueQuantity !== 0 &&
+          p.trueQuantity !== 1
+      );
+    }
+    // If weight column exists, only show quantity if it's different from weight
+    return purchaseHistory.some((p) => {
+      const hasValidWeight =
+        p.weight !== null && p.weight !== 0 && p.weight !== 1;
+      const hasValidQuantity =
+        p.trueQuantity !== null && p.trueQuantity !== 0 && p.trueQuantity !== 1;
+      return (
+        hasValidQuantity && (!hasValidWeight || p.weight !== p.trueQuantity)
+      );
+    });
+  }, [purchaseHistory, showWeightColumn]);
 
-    return (
-      validWeights.length > 0 &&
-      validVolumes.length > 0 &&
-      validWeights.every((w, index) => w === validVolumes[index])
+  // Check if we should show cost column (not all quantities are 1)
+  const showCostColumn = useMemo(() => {
+    if (!purchaseHistory || purchaseHistory.length === 0) return false;
+    return !purchaseHistory.every(
+      (p) =>
+        p.trueQuantity === null || p.trueQuantity === 0 || p.trueQuantity === 1
     );
   }, [purchaseHistory]);
 
@@ -72,29 +97,38 @@ export default function PurchaseHistoryTable({
         <Table.Root>
           <Table.Header>
             <Table.Row>
-              <Table.ColumnHeader>Date & Time</Table.ColumnHeader>
+              <Table.ColumnHeader>Date</Table.ColumnHeader>
               <Table.ColumnHeader textAlign="end">Price</Table.ColumnHeader>
-              <Table.ColumnHeader textAlign="end">Weight (kg)</Table.ColumnHeader>
-              {!showOnlyWeight && (
-                <Table.ColumnHeader textAlign="end">Volume (L)</Table.ColumnHeader>
+              {showWeightColumn && (
+                <Table.ColumnHeader textAlign="end">
+                  Weight (kg)
+                </Table.ColumnHeader>
               )}
-              <Table.ColumnHeader textAlign="end">Cost</Table.ColumnHeader>
+              {showQuantityColumn && (
+                <Table.ColumnHeader textAlign="end">
+                  Quantity
+                </Table.ColumnHeader>
+              )}
+              {showCostColumn && (
+                <Table.ColumnHeader textAlign="end">Cost</Table.ColumnHeader>
+              )}
             </Table.Row>
           </Table.Header>
           <Table.Body>
             {purchaseHistory.map((purchase, index) => {
-              const showWeight =
+              const hasValidWeight =
                 purchase.weight !== null &&
                 purchase.weight !== 0 &&
                 purchase.weight !== 1;
-              const showVolume =
-                !showOnlyWeight &&
-                purchase.volume !== null &&
-                purchase.volume !== 0 &&
-                purchase.volume !== 1;
 
-              // Cost is calculated in SQL
+              const hasValidQuantity =
+                purchase.trueQuantity !== null &&
+                purchase.trueQuantity !== 0 &&
+                purchase.trueQuantity !== 1;
+
+              // Cost is calculated in SQL - show if weight or quantity is valid
               const showCost =
+                (hasValidWeight || hasValidQuantity) &&
                 purchase.cost !== null &&
                 purchase.cost !== 0 &&
                 purchase.cost !== purchase.price;
@@ -102,28 +136,41 @@ export default function PurchaseHistoryTable({
               return (
                 <Table.Row key={index}>
                   <Table.Cell>
-                    {formatDateTime(purchase.timestamp)}
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <span>{formatShortDate(purchase.timestamp)}</span>
+                      </Tooltip.Trigger>
+                      <Tooltip.Positioner>
+                        <Tooltip.Content>
+                          {formatDateTime(purchase.timestamp)}
+                        </Tooltip.Content>
+                      </Tooltip.Positioner>
+                    </Tooltip.Root>
                   </Table.Cell>
                   <Table.Cell textAlign="end">
                     £{formatNumber(purchase.price)}
                   </Table.Cell>
-                  <Table.Cell textAlign="end">
-                    {showWeight && purchase.weight !== null
-                      ? `${formatNumber(purchase.weight)}`
-                      : ""}
-                  </Table.Cell>
-                  {!showOnlyWeight && (
+                  {showWeightColumn && (
                     <Table.Cell textAlign="end">
-                      {showVolume && purchase.volume !== null
-                        ? `${formatNumber(purchase.volume)}`
+                      {hasValidWeight && purchase.weight !== null
+                        ? `${formatNumber(purchase.weight)}`
+                        : "1"}
+                    </Table.Cell>
+                  )}
+                  {showQuantityColumn && (
+                    <Table.Cell textAlign="end">
+                      {hasValidQuantity && purchase.trueQuantity !== null
+                        ? `${formatNumber(purchase.trueQuantity)}`
+                        : "1"}
+                    </Table.Cell>
+                  )}
+                  {showCostColumn && (
+                    <Table.Cell textAlign="end">
+                      {showCost && purchase.cost !== null
+                        ? `£${formatNumber(purchase.cost)}`
                         : ""}
                     </Table.Cell>
                   )}
-                  <Table.Cell textAlign="end">
-                    {showCost && purchase.cost !== null
-                      ? `£${formatNumber(purchase.cost)}`
-                      : ""}
-                  </Table.Cell>
                 </Table.Row>
               );
             })}
@@ -133,4 +180,3 @@ export default function PurchaseHistoryTable({
     </Card.Root>
   );
 }
-

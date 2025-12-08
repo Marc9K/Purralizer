@@ -6,10 +6,17 @@ export const formatNumber = (num: number): string => {
 
 export const formatDateTime = (timestamp: string): string => {
   const date = new Date(timestamp);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day} ${hours}:${minutes}`;
+  return `${day}.${month}.${year} ${hours}:${minutes}`;
+};
+
+export const formatShortDate = (timestamp: string): string => {
+  const date = new Date(timestamp);
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  const year = String(date.getFullYear()).slice(-2);
+  return `${month} '${year}`;
 };
