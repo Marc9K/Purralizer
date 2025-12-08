@@ -59,6 +59,17 @@ export interface ChartDataPoint {
   quantityBought: number;
 }
 
+export interface DaysBetweenPurchasePoint {
+  timestamp: string;
+  date: number;
+  daysSinceLastPurchase: number | null;
+}
+
+export interface DaysBetweenPurchasesResult {
+  data: DaysBetweenPurchasePoint[];
+  averageDays: number | null;
+}
+
 // File import function
 export async function importPurchaseData(
   file: File
@@ -413,4 +424,84 @@ export async function getTotalItemsCount(): Promise<number> {
     `SELECT COUNT(*) as count FROM items`
   );
   return result[0]?.count ?? 0;
+}
+
+// Get days between purchases data for an item
+export async function getDaysBetweenPurchasesData(
+  itemId: number,
+  excludeTopN: number = 0
+): Promise<DaysBetweenPurchasesResult> {
+  // Use a CTE to calculate days, then exclude top N by daysSinceLastPurchase, and calculate average
+  const result = await query<{
+    timestamp: string;
+    daysSinceLastPurchase: number | null;
+    averageDays: number | null;
+  }>(
+    `WITH purchase_days AS (
+      SELECT 
+        pur.timestamp,
+        CASE 
+          WHEN LAG(pur.timestamp) OVER (ORDER BY pur.timestamp) IS NOT NULL
+          THEN julianday(pur.timestamp) - julianday(LAG(pur.timestamp) OVER (ORDER BY pur.timestamp))
+          ELSE NULL
+        END as daysSinceLastPurchase
+      FROM price_purchases pp
+      JOIN prices p ON pp.priceId = p.id
+      JOIN purchases pur ON pp.purchaseId = pur.id
+      WHERE p.itemId = ?
+    ),
+    ranked_purchases AS (
+      SELECT 
+        timestamp,
+        daysSinceLastPurchase,
+        ROW_NUMBER() OVER (
+          ORDER BY 
+            CASE 
+              WHEN daysSinceLastPurchase IS NULL THEN 0 
+              ELSE 1 
+            END,
+            daysSinceLastPurchase DESC
+        ) as rank_order
+      FROM purchase_days
+      WHERE daysSinceLastPurchase IS NOT NULL
+    ),
+    filtered_purchases AS (
+      SELECT 
+        pd.timestamp,
+        pd.daysSinceLastPurchase
+      FROM purchase_days pd
+      LEFT JOIN ranked_purchases rp ON pd.timestamp = rp.timestamp 
+        AND pd.daysSinceLastPurchase = rp.daysSinceLastPurchase
+      WHERE pd.daysSinceLastPurchase IS NULL 
+         OR rp.rank_order IS NULL 
+         OR rp.rank_order > ?
+    )
+    SELECT 
+      fp.timestamp,
+      fp.daysSinceLastPurchase,
+      (
+        SELECT AVG(daysSinceLastPurchase)
+        FROM filtered_purchases
+        WHERE daysSinceLastPurchase IS NOT NULL
+      ) as averageDays
+    FROM filtered_purchases fp
+    ORDER BY fp.timestamp ASC`,
+    [itemId, excludeTopN]
+  );
+
+  const data = result.map((row) => {
+    const date = new Date(row.timestamp);
+    return {
+      timestamp: row.timestamp,
+      date: date.getTime(),
+      daysSinceLastPurchase: row.daysSinceLastPurchase,
+    };
+  });
+
+  const averageDays = result.length > 0 ? result[0]?.averageDays ?? null : null;
+
+  return {
+    data,
+    averageDays,
+  };
 }

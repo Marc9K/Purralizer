@@ -7,6 +7,8 @@ import {
   Card,
   Button,
   ProgressCircle,
+  NumberInput,
+  HStack,
 } from "@chakra-ui/react";
 import { Chart, useChart } from "@chakra-ui/charts";
 import {
@@ -22,12 +24,14 @@ import {
   getItemWithStats,
   getItemPurchaseHistory,
   getItemChartData,
+  getDaysBetweenPurchasesData,
   type ItemWithStats,
   type PurchaseHistoryItem,
   type ChartDataPoint,
 } from "./db/operations";
 import ItemCard from "./components/ItemCard";
 import PurchaseHistoryTable from "./components/PurchaseHistoryTable";
+import { formatNumber } from "./utils/format";
 
 function useQuery<T>(
   querier: () => Promise<T> | T,
@@ -88,6 +92,19 @@ export default function ItemDetail() {
     return await getItemChartData(Number(itemId));
   }, [itemId]);
 
+  const [excludeTopN, setExcludeTopN] = useState("0");
+
+  const { data: daysBetweenResult } = useQuery<
+    import("./db/operations").DaysBetweenPurchasesResult | undefined
+  >(async () => {
+    if (!itemId) return undefined;
+    const excludeCount = parseInt(excludeTopN, 10) || 0;
+    return await getDaysBetweenPurchasesData(Number(itemId), excludeCount);
+  }, [itemId, excludeTopN]);
+
+  const daysBetweenData = daysBetweenResult?.data;
+  const averageDaysBetweenPurchases = daysBetweenResult?.averageDays ?? null;
+
   // Check if all quantities are 1
   const showQuantity = useMemo(() => {
     if (!chartData || chartData.length === 0) return false;
@@ -107,6 +124,17 @@ export default function ItemDetail() {
             },
           ]
         : []),
+    ],
+  });
+
+  const daysBetweenChart = useChart({
+    data: daysBetweenData || [],
+    series: [
+      {
+        name: "daysSinceLastPurchase" as const,
+        color: "purple.solid",
+        label: "Days Since Last Purchase",
+      },
     ],
   });
 
@@ -140,6 +168,84 @@ export default function ItemDetail() {
     <Box p={8}>
       <VStack gap={6} align="stretch">
         {item && <ItemCard item={item} disableNavigation size="large" />}
+
+        {averageDaysBetweenPurchases !== null && (
+          <Card.Root variant="outline">
+            <Card.Body>
+              <HStack mb={4} justify="space-between" align="center">
+                <Text>
+                  Average days between purchases:{" "}
+                  <Text as="span" fontWeight="semibold">
+                    {formatNumber(averageDaysBetweenPurchases)} days
+                  </Text>
+                </Text>
+                <HStack gap={2} align="center">
+                  <Text fontSize="sm" color="fg.muted">
+                    Exclude top
+                  </Text>
+                  <NumberInput.Root
+                    value={excludeTopN}
+                    onValueChange={(e) => setExcludeTopN(e.value)}
+                    min={0}
+                    max={100}
+                    width="80px"
+                  >
+                    <NumberInput.Control />
+                    <NumberInput.Input />
+                  </NumberInput.Root>
+                  <Text fontSize="sm" color="fg.muted">
+                    outliers
+                  </Text>
+                </HStack>
+              </HStack>
+              {daysBetweenData && daysBetweenData.length > 0 && (
+                <Chart.Root maxH="sm" chart={daysBetweenChart}>
+                  <LineChart data={daysBetweenChart.data}>
+                    <CartesianGrid
+                      stroke={daysBetweenChart.color("border")}
+                      vertical={false}
+                    />
+                    <XAxis
+                      axisLine={false}
+                      dataKey="timestamp"
+                      stroke={daysBetweenChart.color("border")}
+                      tickFormatter={(value) => {
+                        const dataPoint = daysBetweenData?.find(
+                          (d) => d.timestamp === value
+                        );
+                        if (!dataPoint) return value;
+                        const date = new Date(dataPoint.date);
+                        return `${date.getMonth() + 1}/${date.getDate()}`;
+                      }}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tickMargin={10}
+                      stroke={daysBetweenChart.color("border")}
+                    />
+                    <Tooltip
+                      animationDuration={100}
+                      cursor={{ stroke: daysBetweenChart.color("border") }}
+                      content={<Chart.Tooltip />}
+                    />
+                    <Legend content={<Chart.Legend />} />
+                    <Line
+                      isAnimationActive={false}
+                      dataKey="daysSinceLastPurchase"
+                      stroke={daysBetweenChart.color("purple.solid")}
+                      strokeWidth={0}
+                      dot={{
+                        r: 4,
+                        fill: daysBetweenChart.color("purple.solid"),
+                      }}
+                    />
+                  </LineChart>
+                </Chart.Root>
+              )}
+            </Card.Body>
+          </Card.Root>
+        )}
 
         {chartData && chartData.length > 0 && (
           <Card.Root variant="outline">
@@ -201,8 +307,8 @@ export default function ItemDetail() {
                       isAnimationActive={false}
                       dataKey="quantityBought"
                       stroke={chart.color("green.solid")}
-                      strokeWidth={2}
-                      dot={false}
+                      strokeWidth={0}
+                      dot={{ r: 1.5, fill: chart.color("green.solid") }}
                     />
                   )}
                 </LineChart>
