@@ -129,6 +129,11 @@ function createTables(database: Database): void {
   database.run(
     `CREATE INDEX IF NOT EXISTS idx_price_purchases_purchaseId ON price_purchases(purchaseId)`
   );
+
+  // Create unique index for purchase uniqueness (timestamp, numberOfItems, basketValueGross)
+  database.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_purchases_unique ON purchases(timestamp, numberOfItems, basketValueGross)`
+  );
 }
 
 async function initDatabase(): Promise<Database> {

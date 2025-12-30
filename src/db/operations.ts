@@ -1,10 +1,4 @@
-import {
-  query,
-  insert,
-  insertMany,
-  clearDatabase,
-  runInTransaction,
-} from "../db";
+import { query, insertMany, clearDatabase, runInTransaction } from "../db";
 
 // Types
 export interface PurchaseData {
@@ -80,8 +74,7 @@ export async function importPurchaseData(
 
     // Run everything in a single transaction to avoid stack overflow
     await runInTransaction(async () => {
-      // Insert purchases in bulk and get their IDs
-      // Convert undefined values to null for SQL
+      // Bulk insert all purchases (INSERT OR IGNORE will skip duplicates via UNIQUE INDEX)
       const purchaseParams = data.purchases.map((purchase) => [
         purchase.timestamp ?? null,
         purchase.type ?? null,
@@ -92,87 +85,183 @@ export async function importPurchaseData(
         purchase.numberOfItems ?? null,
         purchase.payment ? JSON.stringify(purchase.payment) : null,
       ]);
-      const purchaseIds = await insertMany(
-        `INSERT INTO purchases (timestamp, type, says, basketValueGross, overallBasketSavings, basketValueNet, numberOfItems, payment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+
+      await insertMany(
+        `INSERT OR IGNORE INTO purchases (timestamp, type, says, basketValueGross, overallBasketSavings, basketValueNet, numberOfItems, payment) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         purchaseParams,
         true, // skip save - will save at end of transaction
         true // skip transaction - already in a transaction
       );
 
-      // Process each purchase's items
+      // Get all purchase IDs using the UNIQUE INDEX, only for purchases with no items connected
+      const purchaseIds: number[] = [];
+
+      for (const purchase of data.purchases) {
+        const results = await query<{ id: number }>(
+          `SELECT p.id FROM purchases p
+           WHERE p.timestamp = ? AND p.numberOfItems = ? AND p.basketValueGross = ?
+           AND (SELECT COUNT(*) FROM amounts WHERE purchaseId = p.id) = 0`,
+          [
+            purchase.timestamp ?? null,
+            purchase.numberOfItems ?? null,
+            purchase.basketValueGross ?? null,
+          ]
+        );
+        if (results.length > 0) {
+          console.log("found purchaseId", results[0]!.id);
+          purchaseIds.push(results[0]!.id);
+        } else {
+          console.log("no purchaseId found");
+          purchaseIds.push(0); // Placeholder for purchases that don't exist or already have items
+        }
+      }
+
+      // For each purchase, check if it has items connected, if not add them
       for (
         let purchaseIndex = 0;
         purchaseIndex < data.purchases.length;
         purchaseIndex++
       ) {
         const purchase = data.purchases[purchaseIndex];
-        const purchaseId = purchaseIds[purchaseIndex]!;
+        const purchaseId = purchaseIds[purchaseIndex];
 
-        for (const item of purchase.items) {
-          // Find or create item by name (case-insensitive)
-          const existingItems = await query<{ id: number; name: string }>(
-            `SELECT id, name FROM items WHERE LOWER(name) = LOWER(?)`,
-            [item.name]
-          );
+        if (!purchaseId) continue;
 
-          let itemId: number;
-          if (existingItems.length > 0) {
-            itemId = existingItems[0]!.id;
-          } else {
-            itemId = await insert(
+        // If purchase has no items, add them
+        if (purchase.items.length > 0) {
+          // Collect all unique items and prices for this purchase
+          const itemNameToId = new Map<string, number>();
+          const priceKeyToId = new Map<string, number>();
+          const newItemParams: (string | number | null)[][] = [];
+          const newPriceParams: (string | number | null)[][] = [];
+          const pricePurchaseParams: (string | number | null)[][] = [];
+          const amountParams: (string | number | null)[][] = [];
+
+          // First pass: find existing items and collect new ones
+          for (const item of purchase.items) {
+            const itemNameLower = item.name.toLowerCase();
+            if (!itemNameToId.has(itemNameLower)) {
+              const existingItems = await query<{ id: number }>(
+                `SELECT id FROM items WHERE LOWER(name) = ?`,
+                [itemNameLower]
+              );
+              if (existingItems.length > 0) {
+                itemNameToId.set(itemNameLower, existingItems[0]!.id);
+              } else {
+                newItemParams.push([item.name]);
+              }
+            }
+          }
+
+          // Bulk insert new items
+          if (newItemParams.length > 0) {
+            const newItemIds = await insertMany(
               `INSERT INTO items (name) VALUES (?)`,
-              [item.name],
-              true // skip save
+              newItemParams,
+              true, // skip save
+              true // skip transaction
             );
+
+            // Map new item IDs to names
+            let newItemIndex = 0;
+            for (const item of purchase.items) {
+              const itemNameLower = item.name.toLowerCase();
+              if (!itemNameToId.has(itemNameLower)) {
+                itemNameToId.set(itemNameLower, newItemIds[newItemIndex]!);
+                newItemIndex++;
+              }
+            }
           }
 
-          // Find or create price by item name and price value
-          const existingPrices = await query<{
-            id: number;
-            itemId: number;
-            price: number;
-          }>(
-            `SELECT p.id, p.itemId, p.price 
-             FROM prices p 
-             JOIN items i ON p.itemId = i.id 
-             WHERE LOWER(i.name) = LOWER(?) AND p.price = ?`,
-            [item.name, item.price]
-          );
+          // Second pass: find existing prices and collect new ones, build amount params
+          for (const item of purchase.items) {
+            const itemNameLower = item.name.toLowerCase();
+            const itemId = itemNameToId.get(itemNameLower);
+            if (!itemId) continue;
 
-          let priceId: number;
-          if (existingPrices.length > 0) {
-            priceId = existingPrices[0]!.id;
-          } else {
-            priceId = await insert(
-              `INSERT INTO prices (itemId, price) VALUES (?, ?)`,
-              [itemId, item.price],
-              true // skip save
-            );
-          }
+            const priceKey = `${itemId}|${item.price}`;
+            if (!priceKeyToId.has(priceKey)) {
+              const existingPrices = await query<{ id: number }>(
+                `SELECT id FROM prices WHERE itemId = ? AND price = ?`,
+                [itemId, item.price]
+              );
+              if (existingPrices.length > 0) {
+                priceKeyToId.set(priceKey, existingPrices[0]!.id);
+              } else {
+                newPriceParams.push([itemId, item.price]);
+              }
+            }
 
-          // Link price to purchase (many-to-many)
-          try {
-            await insert(
-              `INSERT INTO price_purchases (priceId, purchaseId) VALUES (?, ?)`,
-              [priceId, purchaseId],
-              true // skip save
-            );
-          } catch (error) {
-            // Ignore if already exists (unique constraint)
-          }
-
-          // Insert amount record (handle undefined weight/volume as NULL)
-          await insert(
-            `INSERT INTO amounts (purchaseId, itemId, weight, volume, quantity) VALUES (?, ?, ?, ?, ?)`,
-            [
+            amountParams.push([
               purchaseId,
               itemId,
               item.weight ?? null,
               item.volume ?? null,
               item.quantity,
-            ],
-            true // skip save
-          );
+            ]);
+          }
+
+          // Bulk insert new prices
+          if (newPriceParams.length > 0) {
+            const newPriceIds = await insertMany(
+              `INSERT INTO prices (itemId, price) VALUES (?, ?)`,
+              newPriceParams,
+              true, // skip save
+              true // skip transaction
+            );
+
+            // Map new price IDs
+            let newPriceIndex = 0;
+            for (const item of purchase.items) {
+              const itemNameLower = item.name.toLowerCase();
+              const itemId = itemNameToId.get(itemNameLower);
+              if (!itemId) continue;
+
+              const priceKey = `${itemId}|${item.price}`;
+              if (!priceKeyToId.has(priceKey)) {
+                priceKeyToId.set(priceKey, newPriceIds[newPriceIndex]!);
+                newPriceIndex++;
+              }
+            }
+          }
+
+          // Build price_purchases params
+          for (const item of purchase.items) {
+            const itemNameLower = item.name.toLowerCase();
+            const itemId = itemNameToId.get(itemNameLower);
+            if (!itemId) continue;
+
+            const priceKey = `${itemId}|${item.price}`;
+            const priceId = priceKeyToId.get(priceKey);
+            if (priceId) {
+              pricePurchaseParams.push([priceId, purchaseId]);
+            }
+          }
+
+          // Bulk insert price_purchases (with OR IGNORE for duplicates)
+          if (pricePurchaseParams.length > 0) {
+            try {
+              await insertMany(
+                `INSERT OR IGNORE INTO price_purchases (priceId, purchaseId) VALUES (?, ?)`,
+                pricePurchaseParams,
+                true, // skip save
+                true // skip transaction
+              );
+            } catch (error) {
+              // Ignore errors from unique constraint
+            }
+          }
+
+          // Bulk insert amounts
+          if (amountParams.length > 0) {
+            await insertMany(
+              `INSERT INTO amounts (purchaseId, itemId, weight, volume, quantity) VALUES (?, ?, ?, ?, ?)`,
+              amountParams,
+              true, // skip save
+              true // skip transaction
+            );
+          }
         }
       }
     });
