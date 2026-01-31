@@ -1,4 +1,6 @@
 import { query, insertMany, clearDatabase, runInTransaction } from "../db";
+// @ts-ignore - xlsx/xlsx.mjs doesn't have types but works at runtime
+import * as XLSX from "xlsx/xlsx.mjs";
 
 // Types
 export interface PurchaseData {
@@ -64,14 +66,232 @@ export interface DaysBetweenPurchasesResult {
   averageDays: number | null;
 }
 
-// File import function
-export async function importPurchaseData(
+// XLSX import function
+export async function importPurchaseDataFromXLSX(
   file: File
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const text = await file.text();
-    const data: PurchaseData = JSON.parse(text);
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer, { type: "array" });
 
+    // Find the sheet named "Transactions (Nectar Card)"
+    const sheetName = "Transactions (Nectar Card)";
+    if (!workbook.SheetNames.includes(sheetName)) {
+      return {
+        success: false,
+        error: `Sheet "${sheetName}" not found in the Excel file`,
+      };
+    }
+
+    const worksheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: null,
+    }) as any[][];
+
+    // Find the row starting with "Transaction Item" in column A
+    let headerRowIndex = -1;
+    // for (let i = 0; i < data.length; i++) {
+    //   const cellValue = data[i]?.[0];
+    //   if (
+    //     cellValue &&
+    //     String(cellValue).toLowerCase().startsWith("transaction item")
+    //   ) {
+    //     headerRowIndex = i;
+    //     break;
+    //   }
+    // }
+
+    headerRowIndex = data.findIndex(
+      (row) =>
+        row[0] && String(row[0]).toLowerCase().startsWith("transaction item")
+    );
+
+    if (headerRowIndex === -1) {
+      return {
+        success: false,
+        error: 'Row starting with "Transaction Item" not found in column A',
+      };
+    }
+
+    // Start reading from headerRowIndex + 2 (skip 2 rows)
+    const dataStartRow = headerRowIndex + 2;
+    const purchasesMap = new Map<string, PurchaseData["purchases"][0]>();
+
+    // Parse rows
+    for (let i = dataStartRow; i < data.length; i++) {
+      const row = data[i];
+      if (!row) continue;
+
+      // Get values from columns: A (date), B (time), D (item name), G (weight/volume), J (unit price), M (quantity)
+      const dateValue = row[0]; // Column A
+      const timeValue = row[1]; // Column B
+      const itemName = row[3]; // Column D
+      const quantity = row[8]; // Column I
+      const unitPrice = row[9]; // Column J
+      const cost = row[10]; // Column K
+      const discount = row[11]; // Column L
+      const weightVolumeValue =
+        quantity == 1 && unitPrice != cost && unitPrice != cost + discount
+          ? cost / unitPrice
+          : null; // Column G or H
+
+      // Skip rows with missing essential data
+      if (
+        !dateValue ||
+        !itemName ||
+        unitPrice === null ||
+        unitPrice === undefined ||
+        quantity === null ||
+        quantity === undefined
+      ) {
+        continue;
+      }
+
+      // Parse date and time
+      let timestamp: string;
+      try {
+        // Handle different date formats
+        let date: Date;
+        if (dateValue instanceof Date) {
+          date = new Date(dateValue);
+        } else if (typeof dateValue === "number") {
+          // Excel serial date (days since 1900-01-01)
+          // Excel epoch is 1899-12-30
+          const excelEpoch = new Date(1899, 11, 30);
+          const msSinceExcelEpoch = dateValue * 86400000;
+          date = new Date(excelEpoch.getTime() + msSinceExcelEpoch);
+        } else {
+          // Try parsing as string
+          const dateStr = String(dateValue).trim();
+          date = new Date(dateStr);
+          if (isNaN(date.getTime())) {
+            // Try parsing as Excel date number string
+            const numValue = parseFloat(dateStr);
+            if (!isNaN(numValue)) {
+              const excelEpoch = new Date(1899, 11, 30);
+              const msSinceExcelEpoch = numValue * 86400000;
+              date = new Date(excelEpoch.getTime() + msSinceExcelEpoch);
+            } else {
+              continue; // Skip invalid dates
+            }
+          }
+        }
+
+        // Parse time
+        let hours = 0,
+          minutes = 0,
+          seconds = 0;
+        if (timeValue !== null && timeValue !== undefined) {
+          if (typeof timeValue === "number") {
+            // Excel time (fraction of day)
+            const totalSeconds = Math.round(timeValue * 86400);
+            hours = Math.floor(totalSeconds / 3600);
+            minutes = Math.floor((totalSeconds % 3600) / 60);
+            seconds = totalSeconds % 60;
+          } else {
+            // Try parsing time string (HH:MM:SS or HH:MM)
+            const timeStr = String(timeValue).trim();
+            const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+            if (timeMatch) {
+              hours = parseInt(timeMatch[1]!, 10);
+              minutes = parseInt(timeMatch[2]!, 10);
+              seconds = timeMatch[3] ? parseInt(timeMatch[3]!, 10) : 0;
+            }
+          }
+        }
+
+        // Set time on date
+        date.setHours(hours, minutes, seconds, 0);
+
+        // Format as ISO string
+        timestamp = date.toISOString();
+      } catch (error) {
+        console.warn("Error parsing date/time:", error, dateValue, timeValue);
+        continue;
+      }
+
+      // Parse numeric values
+      const price = parseFloat(
+        String(discount != 0 ? cost / quantity : unitPrice)
+      );
+      const qty = parseFloat(String(quantity));
+
+      if (isNaN(price) || isNaN(qty) || price < 0 || qty <= 0) {
+        continue;
+      }
+
+      // Parse weight/volume from column G
+      let weight: number = 0;
+      let volume: number = 0;
+      if (weightVolumeValue !== null && weightVolumeValue !== undefined) {
+        const weightVolume = parseFloat(String(weightVolumeValue));
+        if (!isNaN(weightVolume) && weightVolume > 0) {
+          // Use the value as volume (since volume is used in quantity calculations)
+          volume = weightVolume;
+          // Also set as weight if it makes sense (you can adjust this logic if needed)
+          weight = weightVolume;
+        }
+      }
+
+      // Group items by transaction (same timestamp)
+      if (!purchasesMap.has(timestamp)) {
+        purchasesMap.set(timestamp, {
+          timestamp,
+          type: "",
+          says: "",
+          basketValueGross: 0,
+          overallBasketSavings: 0,
+          basketValueNet: 0,
+          numberOfItems: 0,
+          payment: [],
+          items: [],
+        });
+      }
+
+      const purchase = purchasesMap.get(timestamp)!;
+      purchase.items.push({
+        name: String(itemName).trim(),
+        quantity: qty,
+        weight: weight,
+        price: price,
+        volume: volume,
+      });
+    }
+
+    // Calculate totals for each purchase
+    const purchases = Array.from(purchasesMap.values()).map((purchase) => {
+      const basketValueGross = purchase.items.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0
+      );
+      return {
+        ...purchase,
+        basketValueGross,
+        basketValueNet: basketValueGross,
+        numberOfItems: purchase.items.length,
+      };
+    });
+
+    // Create PurchaseData object
+    const purchaseData: PurchaseData = {
+      requestId: "",
+      purchases,
+      orders: [],
+    };
+
+    // Use the existing import logic
+    return await importPurchaseDataFromObject(purchaseData);
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+// Helper function to import PurchaseData object (extracted from importPurchaseData)
+async function importPurchaseDataFromObject(
+  data: PurchaseData
+): Promise<{ success: boolean; error?: string }> {
+  try {
     // Run everything in a single transaction to avoid stack overflow
     await runInTransaction(async () => {
       // Bulk insert all purchases (INSERT OR IGNORE will skip duplicates via UNIQUE INDEX)
@@ -270,6 +490,19 @@ export async function importPurchaseData(
     window.dispatchEvent(new Event("db-update"));
 
     return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+// File import function
+export async function importPurchaseData(
+  file: File
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const text = await file.text();
+    const data: PurchaseData = JSON.parse(text);
+    return await importPurchaseDataFromObject(data);
   } catch (error) {
     return { success: false, error: String(error) };
   }
