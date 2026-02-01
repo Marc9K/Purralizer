@@ -834,6 +834,7 @@ export interface CombinedItemRecord {
   id: number;
   name: string;
   createdAt: string;
+  totalSpent: number;
 }
 
 /** Create a combined item with the given name and linked item IDs. Returns the new combined item id. */
@@ -867,9 +868,26 @@ export async function createCombinedItem(
 /** List all combined items. */
 export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
   const rows = await query<CombinedItemRecord>(
-    `SELECT id, name, createdAt FROM combined_items ORDER BY createdAt DESC`
+    `SELECT 
+      ci.id,
+      ci.name,
+      ci.createdAt,
+      COALESCE(SUM(
+        p.price * COALESCE(a.volume, a.quantity)
+      ), 0) as totalSpent
+    FROM combined_items ci
+    LEFT JOIN combined_item_links cil ON cil.combinedItemId = ci.id
+    LEFT JOIN prices p ON p.itemId = cil.itemId
+    LEFT JOIN price_purchases pp ON pp.priceId = p.id
+    LEFT JOIN purchases pur ON pp.purchaseId = pur.id
+    LEFT JOIN amounts a ON a.purchaseId = pur.id AND a.itemId = p.itemId
+    GROUP BY ci.id, ci.name, ci.createdAt
+    ORDER BY ci.createdAt DESC`
   );
-  return rows;
+  return rows.map((row) => ({
+    ...row,
+    totalSpent: row.totalSpent ?? 0,
+  }));
 }
 
 /** Get linked item IDs for a combined item. */

@@ -2,6 +2,7 @@ import { Center, ProgressCircle, SimpleGrid, Text } from "@chakra-ui/react";
 import { Link } from "react-router-dom";
 import { Card } from "@chakra-ui/react";
 import type { CombinedItemRecord } from "../db/operations";
+import { formatNumber } from "../utils/format";
 
 type CombinedListGridProps = {
   items: CombinedItemRecord[];
@@ -49,9 +50,13 @@ export default function CombinedListGrid({
             variant="outline"
             cursor="pointer"
             _hover={{ borderColor: "blue.500" }}
+            className="data-card"
           >
             <Card.Body>
               <Card.Title>{item.name}</Card.Title>
+              <Text mt={2} fontSize="sm" color="fg.muted">
+                Total Spent: £{formatNumber(item.totalSpent)}
+              </Text>
             </Card.Body>
           </Card.Root>
         </Link>
