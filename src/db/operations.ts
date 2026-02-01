@@ -1,4 +1,4 @@
-import { query, insertMany, clearDatabase, runInTransaction } from "../db";
+import { query, insert, insertMany, clearDatabase, runInTransaction } from "../db";
 // @ts-ignore - xlsx/xlsx.mjs doesn't have types but works at runtime
 import * as XLSX from "xlsx/xlsx.mjs";
 
@@ -329,7 +329,7 @@ async function importPurchaseDataFromObject(
           ]
         );
         if (results.length > 0) {
-          console.log("found purchaseId", results[0]!.id);
+          // console.log("found purchaseId", results[0]!.id);
           purchaseIds.push(results[0]!.id);
         } else {
           console.log("no purchaseId found");
@@ -824,6 +824,211 @@ export async function getDaysBetweenPurchasesData(
 
   return {
     data,
+    averageDays,
+  };
+}
+
+// Combined items: CRUD and aggregated data
+
+export interface CombinedItemRecord {
+  id: number;
+  name: string;
+  createdAt: string;
+}
+
+/** Create a combined item with the given name and linked item IDs. Returns the new combined item id. */
+export async function createCombinedItem(
+  name: string,
+  itemIds: number[]
+): Promise<number> {
+  if (itemIds.length === 0) {
+    throw new Error("At least one item must be selected");
+  }
+  return await runInTransaction(async () => {
+    const createdAt = new Date().toISOString();
+    const id = await insert(
+      "INSERT INTO combined_items (name, createdAt) VALUES (?, ?)",
+      [name, createdAt],
+      true
+    );
+    if (itemIds.length > 0) {
+      const linkParams = itemIds.map((itemId) => [id, itemId]);
+      await insertMany(
+        "INSERT INTO combined_item_links (combinedItemId, itemId) VALUES (?, ?)",
+        linkParams,
+        true,
+        true
+      );
+    }
+    return id;
+  });
+}
+
+/** List all combined items. */
+export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
+  const rows = await query<CombinedItemRecord>(
+    `SELECT id, name, createdAt FROM combined_items ORDER BY createdAt DESC`
+  );
+  return rows;
+}
+
+/** Get linked item IDs for a combined item. */
+async function getCombinedItemLinkIds(combinedItemId: number): Promise<number[]> {
+  const rows = await query<{ itemId: number }>(
+    `SELECT itemId FROM combined_item_links WHERE combinedItemId = ? ORDER BY itemId`,
+    [combinedItemId]
+  );
+  return rows.map((r) => r.itemId);
+}
+
+/** Combined item with same stats shape as ItemWithStats for display (id is combined item id). */
+export interface CombinedItemWithStats extends ItemWithStats {}
+
+/** Get a combined item with aggregated stats (sum totals; latestPrice = most recent purchase across linked items). */
+export async function getCombinedItemWithStats(
+  combinedItemId: number
+): Promise<CombinedItemWithStats | undefined> {
+  const rows = await query<{ id: number; name: string; createdAt: string }>(
+    `SELECT id, name, createdAt FROM combined_items WHERE id = ?`,
+    [combinedItemId]
+  );
+  if (rows.length === 0) return undefined;
+  const combined = rows[0]!;
+  const itemIds = await getCombinedItemLinkIds(combinedItemId);
+  if (itemIds.length === 0) {
+    return {
+      id: combined.id,
+      name: combined.name,
+      latestPrice: null,
+      totalQuantity: 0,
+      totalSpent: 0,
+    };
+  }
+
+  let totalQuantity = 0;
+  let totalSpent = 0;
+  let latestPrice: number | null = null;
+  let latestTimestamp: string | null = null;
+
+  for (const itemId of itemIds) {
+    const stats = await getItemWithStats(itemId);
+    if (stats) {
+      totalQuantity += stats.totalQuantity;
+      totalSpent += stats.totalSpent;
+    }
+    const history = await getItemPurchaseHistory(itemId);
+    for (const h of history) {
+      if (
+        !latestTimestamp ||
+        (h.timestamp !== null && h.timestamp > latestTimestamp)
+      ) {
+        latestTimestamp = h.timestamp;
+        latestPrice = h.price;
+      }
+    }
+  }
+
+  return {
+    id: combined.id,
+    name: combined.name,
+    latestPrice,
+    totalQuantity,
+    totalSpent,
+  };
+}
+
+/** Merged purchase history for a combined item (all linked items, sorted by timestamp DESC). */
+export async function getCombinedItemPurchaseHistory(
+  combinedItemId: number
+): Promise<PurchaseHistoryItem[]> {
+  const itemIds = await getCombinedItemLinkIds(combinedItemId);
+  const all: PurchaseHistoryItem[] = [];
+  for (const itemId of itemIds) {
+    const history = await getItemPurchaseHistory(itemId);
+    all.push(...history);
+  }
+  all.sort((a, b) => (b.timestamp > a.timestamp ? 1 : b.timestamp < a.timestamp ? -1 : 0));
+  return all;
+}
+
+/** Merged chart data: one point per timestamp, quantity summed, price = weighted average by quantity. */
+export async function getCombinedItemChartData(
+  combinedItemId: number
+): Promise<ChartDataPoint[]> {
+  const history = await getCombinedItemPurchaseHistory(combinedItemId);
+  // Group by timestamp (string key)
+  const byTimestamp = new Map<
+    string,
+    { totalQty: number; weightedSum: number }
+  >();
+  for (const p of history) {
+    const key = p.timestamp;
+    const qty = p.trueQuantity;
+    const weighted = p.price * qty;
+    const existing = byTimestamp.get(key);
+    if (existing) {
+      existing.totalQty += qty;
+      existing.weightedSum += weighted;
+    } else {
+      byTimestamp.set(key, { totalQty: qty, weightedSum: weighted });
+    }
+  }
+  const points: ChartDataPoint[] = [];
+  for (const [timestamp, agg] of byTimestamp) {
+    const date = new Date(timestamp);
+    const price = agg.totalQty > 0 ? agg.weightedSum / agg.totalQty : 0;
+    points.push({
+      timestamp,
+      date: date.getTime(),
+      price,
+      quantityBought: agg.totalQty,
+    });
+  }
+  points.sort((a, b) => a.date - b.date);
+  return points;
+}
+
+/** Days-between-purchases for combined item: unique purchase timestamps across linked items, then same logic. */
+export async function getCombinedItemDaysBetweenPurchasesData(
+  combinedItemId: number,
+  excludeTopN: number = 0
+): Promise<DaysBetweenPurchasesResult> {
+  const history = await getCombinedItemPurchaseHistory(combinedItemId);
+  const timestamps = [...new Set(history.map((h) => h.timestamp))].sort();
+  if (timestamps.length === 0) {
+    return { data: [], averageDays: null };
+  }
+
+  const daysBetween: DaysBetweenPurchasePoint[] = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    const ts = timestamps[i]!;
+    const date = new Date(ts);
+    let daysSinceLastPurchase: number | null = null;
+    if (i > 0) {
+      const prevDate = new Date(timestamps[i - 1]!);
+      daysSinceLastPurchase =
+        (date.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24);
+    }
+    daysBetween.push({
+      timestamp: ts,
+      date: date.getTime(),
+      daysSinceLastPurchase,
+    });
+  }
+
+  const daysBetweenSorted = [...daysBetween].sort((a, b) => (b.daysSinceLastPurchase ?? 0) - (a.daysSinceLastPurchase ?? 0));
+  const withDays = daysBetweenSorted.filter((d) => d.daysSinceLastPurchase != null);
+
+  const excluded = withDays.slice(excludeTopN);
+  const sum = excluded.reduce(
+    (acc, d) => acc + (d.daysSinceLastPurchase ?? 0),
+    0
+  );
+  const averageDays =
+    excluded.length > 0 ? sum / excluded.length : null;
+
+  return {
+    data: excluded.sort((a, b) => a.date - b.date),
     averageDays,
   };
 }

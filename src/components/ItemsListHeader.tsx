@@ -6,6 +6,13 @@ type ItemsListHeaderProps = {
   totalSpentDisplay: string | null;
   onFileAccept: (details: { files: File[] }) => void;
   onClearDatabase: () => void;
+  showSelectionControls: boolean;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+  onCombineClick: () => void;
+  combineDisabled: boolean;
+  selectAllDisabled: boolean;
+  deselectAllDisabled: boolean;
 };
 
 export default function ItemsListHeader({
@@ -14,6 +21,13 @@ export default function ItemsListHeader({
   totalSpentDisplay,
   onFileAccept,
   onClearDatabase,
+  showSelectionControls,
+  onSelectAll,
+  onDeselectAll,
+  onCombineClick,
+  combineDisabled,
+  selectAllDisabled,
+  deselectAllDisabled,
 }: ItemsListHeaderProps) {
   return (
     <>
@@ -35,7 +49,7 @@ export default function ItemsListHeader({
           {hasItems ? (
             <Menu.Root>
               <Menu.Trigger asChild>
-                <Button colorPalette="black">Menu</Button>
+                <Button color="fg.muted">Menu</Button>
               </Menu.Trigger>
               <Menu.Positioner>
                 <Menu.Content>
@@ -67,6 +81,34 @@ export default function ItemsListHeader({
           )}
         </FileUpload.Root>
       </HStack>
+      {showSelectionControls && (
+        <HStack gap={2}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onSelectAll}
+            disabled={selectAllDisabled}
+          >
+            Select all
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onDeselectAll}
+            disabled={deselectAllDisabled}
+          >
+            Deselect all
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCombineClick}
+            disabled={combineDisabled}
+          >
+            Combine
+          </Button>
+        </HStack>
+      )}
       {totalSpentDisplay && (
         <Box
           p={4}

@@ -25,6 +25,10 @@ import {
   getItemPurchaseHistory,
   getItemChartData,
   getDaysBetweenPurchasesData,
+  getCombinedItemWithStats,
+  getCombinedItemPurchaseHistory,
+  getCombinedItemChartData,
+  getCombinedItemDaysBetweenPurchasesData,
   type ItemWithStats,
   type PurchaseHistoryItem,
   type ChartDataPoint,
@@ -70,37 +74,54 @@ function useQuery<T>(
 }
 
 export default function ItemDetail() {
-  const { itemId } = useParams<{ itemId: string }>();
+  const { itemId, combinedId } = useParams<{
+    itemId?: string;
+    combinedId?: string;
+  }>();
   const navigate = useNavigate();
+  const isCombined = !!combinedId;
+  const id = combinedId ?? itemId;
 
   const { data: item, loading: itemLoading } = useQuery<
     ItemWithStats | undefined
   >(async () => {
-    if (!itemId) return undefined;
-    return await getItemWithStats(Number(itemId));
-  }, [itemId]);
+    if (!id) return undefined;
+    const numId = Number(id);
+    return isCombined
+      ? await getCombinedItemWithStats(numId)
+      : await getItemWithStats(numId);
+  }, [id, isCombined]);
 
   const { data: purchaseHistory, loading: historyLoading } = useQuery<
     PurchaseHistoryItem[]
   >(async () => {
-    if (!itemId) return [];
-    return await getItemPurchaseHistory(Number(itemId));
-  }, [itemId]);
+    if (!id) return [];
+    const numId = Number(id);
+    return isCombined
+      ? await getCombinedItemPurchaseHistory(numId)
+      : await getItemPurchaseHistory(numId);
+  }, [id, isCombined]);
 
   const { data: chartData } = useQuery<ChartDataPoint[]>(async () => {
-    if (!itemId) return [];
-    return await getItemChartData(Number(itemId));
-  }, [itemId]);
+    if (!id) return [];
+    const numId = Number(id);
+    return isCombined
+      ? await getCombinedItemChartData(numId)
+      : await getItemChartData(numId);
+  }, [id, isCombined]);
 
   const [excludeTopN, setExcludeTopN] = useState("0");
 
   const { data: daysBetweenResult } = useQuery<
     import("./db/operations").DaysBetweenPurchasesResult | undefined
   >(async () => {
-    if (!itemId) return undefined;
+    if (!id) return undefined;
+    const numId = Number(id);
     const excludeCount = parseInt(excludeTopN, 10) || 0;
-    return await getDaysBetweenPurchasesData(Number(itemId), excludeCount);
-  }, [itemId, excludeTopN]);
+    return isCombined
+      ? await getCombinedItemDaysBetweenPurchasesData(numId, excludeCount)
+      : await getDaysBetweenPurchasesData(numId, excludeCount);
+  }, [id, isCombined, excludeTopN]);
 
   const daysBetweenData = daysBetweenResult?.data;
   const averageDaysBetweenPurchases = daysBetweenResult?.averageDays ?? null;

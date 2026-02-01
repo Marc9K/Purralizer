@@ -8,6 +8,7 @@ function App() {
     <Routes>
       <Route path="/" element={<ItemsList />} />
       <Route path="/item/:itemId" element={<ItemDetail />} />
+      <Route path="/combined/:combinedId" element={<ItemDetail />} />
     </Routes>
   );
 }

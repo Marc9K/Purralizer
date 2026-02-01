@@ -4,6 +4,7 @@ import {
   Input,
   Portal,
   ProgressCircle,
+  Stack,
   Select,
   Switch,
   Text,
@@ -47,7 +48,11 @@ export default function ItemsListFilters({
     searchQuery && totalItemsCount !== undefined && totalItemsCount > 0;
 
   return (
-    <HStack gap={4} align="flex-end">
+    <Stack
+      gap={4}
+      direction={{ base: "column", md: "row" }}
+      align={{ base: "stretch", md: "flex-end" }}
+    >
       <Box flex={1}>
         <HStack gap={2} mb={2}>
           <Text fontSize="xl" fontWeight="bold">
@@ -69,12 +74,13 @@ export default function ItemsListFilters({
           onChange={(e) => onSearchQueryChange(e.target.value)}
         />
       </Box>
+      <HStack gap={2}>
       <Select.Root
         collection={sortFieldOptions}
         value={sortField}
         onValueChange={(e) => onSortFieldChange(e.value)}
         size="sm"
-        width="180px"
+        width={{ base: "100%", md: "180px" }}
       >
         <Select.HiddenSelect />
         <Select.Label>Sort by</Select.Label>
@@ -105,6 +111,7 @@ export default function ItemsListFilters({
           onSortDirectionChange(e.checked ? "desc" : "asc")
         }
         size="lg"
+        alignSelf={{ base: "flex-start", md: "flex-end" }}
       >
         <Switch.HiddenInput />
         <Switch.Control>
@@ -113,6 +120,7 @@ export default function ItemsListFilters({
           </Switch.Thumb>
         </Switch.Control>
       </Switch.Root>
-    </HStack>
+      </HStack>
+    </Stack>
   );
 }

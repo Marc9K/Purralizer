@@ -41,6 +41,17 @@ export interface PricePurchase {
   purchaseId: number;
 }
 
+export interface CombinedItem {
+  id?: number;
+  name: string;
+  createdAt: string;
+}
+
+export interface CombinedItemLink {
+  combinedItemId: number;
+  itemId: number;
+}
+
 // Re-export types from operations for convenience
 export type {
   ItemWithStats,
@@ -134,6 +145,31 @@ function createTables(database: Database): void {
   database.run(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_purchases_unique ON purchases(timestamp, numberOfItems, basketValueGross)`
   );
+
+  database.run(`
+    CREATE TABLE IF NOT EXISTS combined_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      createdAt TEXT NOT NULL
+    )
+  `);
+
+  database.run(`
+    CREATE TABLE IF NOT EXISTS combined_item_links (
+      combinedItemId INTEGER NOT NULL,
+      itemId INTEGER NOT NULL,
+      PRIMARY KEY (combinedItemId, itemId),
+      FOREIGN KEY (combinedItemId) REFERENCES combined_items(id),
+      FOREIGN KEY (itemId) REFERENCES items(id)
+    )
+  `);
+
+  database.run(
+    `CREATE INDEX IF NOT EXISTS idx_combined_item_links_combinedItemId ON combined_item_links(combinedItemId)`
+  );
+  database.run(
+    `CREATE INDEX IF NOT EXISTS idx_combined_item_links_itemId ON combined_item_links(itemId)`
+  );
 }
 
 async function initDatabase(): Promise<Database> {
@@ -193,6 +229,8 @@ export async function getDb(): Promise<Database> {
 export async function clearDatabase(): Promise<void> {
   const database = await getDb();
   // Drop tables in reverse order of dependencies
+  database.run(`DROP TABLE IF EXISTS combined_item_links`);
+  database.run(`DROP TABLE IF EXISTS combined_items`);
   database.run(`DROP TABLE IF EXISTS price_purchases`);
   database.run(`DROP TABLE IF EXISTS amounts`);
   database.run(`DROP TABLE IF EXISTS prices`);
