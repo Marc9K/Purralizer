@@ -25,6 +25,7 @@ export default function ItemCard({
         variant="outline"
         cursor={disableNavigation ? "default" : "pointer"}
         _hover={disableNavigation ? {} : { borderColor: "blue.500" }}
+        className="item-card"
       >
         <Card.Body>
           <Card.Title
@@ -43,12 +44,12 @@ export default function ItemCard({
               </Text>
             )}
             {item.totalQuantity > 0 && (
-              <Text fontSize={textSize} color="fg.muted">
+              <Text fontSize={textSize}>
                 Total Bought: {formatNumber(item.totalQuantity)}
               </Text>
             )}
             {item.totalSpent > 0 && (
-              <Text fontSize={textSize} color="fg.muted">
+              <Text fontSize={textSize}>
                 Total Spent: £{formatNumber(item.totalSpent)}
               </Text>
             )}

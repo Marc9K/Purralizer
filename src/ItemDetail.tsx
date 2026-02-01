@@ -191,7 +191,7 @@ export default function ItemDetail() {
         {item && <ItemCard item={item} disableNavigation size="large" />}
 
         {averageDaysBetweenPurchases !== null && (
-          <Card.Root variant="outline">
+          <Card.Root variant="outline" className="data-card">
             <Card.Body>
               <HStack mb={4} justify="space-between" align="center">
                 <Text>
@@ -269,7 +269,7 @@ export default function ItemDetail() {
         )}
 
         {chartData && chartData.length > 0 && (
-          <Card.Root variant="outline">
+          <Card.Root variant="outline" className="data-card">
             <Card.Body>
               <Card.Title mb={4}>Price & Quantity Over Time</Card.Title>
               <Chart.Root maxH="sm" chart={chart}>

@@ -49,7 +49,7 @@ export default function ItemsListHeader({
           {hasItems ? (
             <Menu.Root>
               <Menu.Trigger asChild>
-                <Button color="fg.muted">Menu</Button>
+                <Button borderColor="fg.inverted">Menu</Button>
               </Menu.Trigger>
               <Menu.Positioner>
                 <Menu.Content>

@@ -42,7 +42,8 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: #606060;
+  color: rgba(226, 226, 226, 0.87);
   cursor: pointer;
   transition: border-color 0.25s;
 }
@@ -54,6 +55,21 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+.item-card {
+  background-color: #1a1a1a;
+  color: rgba(205, 205, 205, 0.87);
+}
+
+.data-card {
+  background-color: #1a1a1a;
+  color: rgba(205, 205, 205, 0.87);
+}
+
+.data-table {
+  background-color: #1a1a1a;
+  color: rgba(205, 205, 205, 0.87);
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
@@ -63,6 +79,19 @@ button:focus-visible {
     color: #747bff;
   }
   button {
-    background-color: #f9f9f9;
+    color: #213547;
+    background-color: #aaaaaa;
+  }
+  .item-card {
+    color: rgba(0, 0, 0, 0.7);
+    background-color: #ffffff;
+  }
+  .data-card {
+    color: rgba(0, 0, 0, 0.7);
+    background-color: #ffffff;
+  }
+  .data-table {
+    color: rgba(0, 0, 0, 0.7);
+    background-color: #ffffff;
   }
 }
