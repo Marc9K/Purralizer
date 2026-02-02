@@ -1,4 +1,11 @@
-import { query, insert, insertMany, clearDatabase, runInTransaction } from "../db";
+import {
+  query,
+  insert,
+  insertMany,
+  clearDatabase,
+  runInTransaction,
+  execute,
+} from "../db";
 // @ts-ignore - xlsx/xlsx.mjs doesn't have types but works at runtime
 import * as XLSX from "xlsx/xlsx.mjs";
 
@@ -888,6 +895,18 @@ export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
     ...row,
     totalSpent: row.totalSpent ?? 0,
   }));
+}
+
+/** Delete a combined item and its links. */
+export async function deleteCombinedItem(combinedItemId: number): Promise<void> {
+  await runInTransaction(async () => {
+    await execute(
+      "DELETE FROM combined_item_links WHERE combinedItemId = ?",
+      [combinedItemId],
+      true
+    );
+    await execute("DELETE FROM combined_items WHERE id = ?", [combinedItemId], true);
+  });
 }
 
 /** Get linked item IDs for a combined item. */

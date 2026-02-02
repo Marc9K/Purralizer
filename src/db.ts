@@ -259,6 +259,22 @@ export async function query<T>(
   return results;
 }
 
+// Helper function to execute a statement and save changes
+export async function execute(
+  sql: string,
+  params: (string | number | null)[] = [],
+  skipSave: boolean = false
+): Promise<void> {
+  const database = await getDb();
+  const stmt = database.prepare(sql);
+  stmt.bind(params);
+  stmt.step();
+  stmt.free();
+  if (!skipSave) {
+    saveDatabase();
+  }
+}
+
 // Helper function to execute a single insert and return the last insert ID
 export async function insert(
   sql: string,

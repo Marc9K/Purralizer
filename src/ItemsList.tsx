@@ -113,8 +113,8 @@ export default function ItemsList() {
   };
 
   return (
-    <Box p={8}>
-      <Toaster toaster={statusToaster}>
+    <Box p={8} className="widened">
+      <Toaster toaster={statusToaster} width="300">
         {(toast) => (
           <Toast.Root>
             <Toast.Title>{toast.title}</Toast.Title>
@@ -125,7 +125,7 @@ export default function ItemsList() {
           </Toast.Root>
         )}
       </Toaster>
-      <VStack gap={4} align="stretch">
+      <VStack gap={4} className="widened-vertical bg-vstack">
         <ItemsListHeader
           hasItems={hasItems}
           isBusy={isBusy}
@@ -183,7 +183,12 @@ export default function ItemsList() {
           </Dialog.Positioner>
         </Dialog.Root>
         {showItemsSection && (
-          <VStack gap={4} align="stretch" mt={8}>
+          <VStack
+            gap={4}
+            align="stretch"
+            mt={8}
+            className="widened-vertical "
+          >
             <ItemsListFilters
               itemsCount={itemsArray.length}
               totalItemsCount={totalItemsCount}
@@ -195,13 +200,25 @@ export default function ItemsList() {
               sortDirection={sortDirection}
               onSortDirectionChange={setSortDirection}
             />
-            <Tabs.Root defaultValue="items">
-              <Tabs.List>
-                <Tabs.Trigger value="items">Items</Tabs.Trigger>
-                <Tabs.Trigger value="combined">Combined</Tabs.Trigger>
+            <Tabs.Root defaultValue="items" className="">
+              <Tabs.List className="">
+                <Tabs.Trigger
+                  value="items"
+                  width="6rem"
+                  justifyContent="center"
+                >
+                  Items
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="combined"
+                  width="6rem"
+                  justifyContent="center"
+                >
+                  Combined
+                </Tabs.Trigger>
                 <Tabs.Indicator />
               </Tabs.List>
-              <Tabs.Content value="items">
+              <Tabs.Content value="items" className="widened ">
                 <ItemsListGrid
                   items={itemsArray}
                   loading={itemsLoading}
@@ -210,7 +227,10 @@ export default function ItemsList() {
                   onSelectionChange={handleSelectionChange}
                 />
               </Tabs.Content>
-              <Tabs.Content value="combined">
+              <Tabs.Content
+                value="combined"
+                className="widened "
+              >
                 <CombinedListGrid
                   items={combinedItems}
                   loading={combinedLoading}

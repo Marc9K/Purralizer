@@ -18,14 +18,19 @@ export default function ItemCard({
   const priceSize = size === "large" ? "lg" : "sm";
 
   return (
-    <Link href={disableNavigation ? undefined : `/item/${item.id}`}>
+    <Link
+      href={disableNavigation ? undefined : `/item/${item.id}`}
+      display="block"
+      width="100%"
+      className=""
+    >
       <Card.Root
         width="100%"
         height="100%"
         variant="outline"
         cursor={disableNavigation ? "default" : "pointer"}
         _hover={disableNavigation ? {} : { borderColor: "blue.500" }}
-        className="item-card"
+        className="item-card "
       >
         <Card.Body>
           <Card.Title

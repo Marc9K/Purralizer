@@ -34,7 +34,7 @@ export default function ItemsListItem({
           <Checkbox.Indicator />
         </Checkbox.Control>
       </Checkbox.Root>
-      <Box flex={1}>
+      <Box flex={1} className="">
         <ItemCard item={item} />
       </Box>
     </HStack>

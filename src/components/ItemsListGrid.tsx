@@ -34,7 +34,11 @@ export default function ItemsListGrid({
   }
 
   return (
-    <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={4}>
+    <SimpleGrid
+      columns={{ base: 1, md: 2, lg: 3 }}
+      gap={4}
+      className="widened "
+    >
       {items.map((item) => (
         <ItemsListItem
           key={item.id}

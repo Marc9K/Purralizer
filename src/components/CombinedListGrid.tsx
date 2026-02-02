@@ -1,8 +1,10 @@
-import { Center, ProgressCircle, SimpleGrid, Text } from "@chakra-ui/react";
+import { Button, Center, HStack, ProgressCircle, SimpleGrid, Text } from "@chakra-ui/react";
 import { Link } from "react-router-dom";
 import { Card } from "@chakra-ui/react";
 import type { CombinedItemRecord } from "../db/operations";
+import { deleteCombinedItem } from "../db/operations";
 import { formatNumber } from "../utils/format";
+import { useState } from "react";
 
 type CombinedListGridProps = {
   items: CombinedItemRecord[];
@@ -13,6 +15,23 @@ export default function CombinedListGrid({
   items,
   loading,
 }: CombinedListGridProps) {
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const handleDelete = async (combinedItemId: number) => {
+    if (deletingId !== null) return;
+    const confirmed = window.confirm("Delete this combined item?");
+    if (!confirmed) return;
+    setDeletingId(combinedItemId);
+    try {
+      await deleteCombinedItem(combinedItemId);
+      window.dispatchEvent(new Event("db-update"));
+    } catch (error) {
+      console.error(error);
+      window.alert("Failed to delete combined item.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
   if (loading && items.length === 0) {
     return (
       <Center py={8} flexDirection="column">
@@ -41,19 +60,48 @@ export default function CombinedListGrid({
   }
 
   return (
-    <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={4}>
+    <SimpleGrid
+      columns={{ base: 1, md: 2, lg: 3 }}
+      gap={4}
+      className="widened "
+    >
       {items.map((item) => (
-        <Link key={item.id} to={`/combined/${item.id}`}>
+        <Link
+          key={item.id}
+          to={`/combined/${item.id}`}
+          style={{ display: "block", width: "100%" }}
+          className="widened "
+        >
           <Card.Root
             width="100%"
             height="100%"
             variant="outline"
             cursor="pointer"
             _hover={{ borderColor: "blue.500" }}
-            className="data-card"
+            className="data-card widened "
           >
-            <Card.Body>
-              <Card.Title>{item.name}</Card.Title>
+            <Card.Body className="">
+              <HStack
+                justify="space-between"
+                align="start"
+                gap={3}
+                className=""
+              >
+                <Card.Title className="">{item.name}</Card.Title>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  colorPalette="red"
+                  disabled={deletingId === item.id}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void handleDelete(item.id);
+                  }}
+                >
+                  Delete
+                </Button>
+              </HStack>
               <Text mt={2} fontSize="sm" color="fg.muted">
                 Total Spent: £{formatNumber(item.totalSpent)}
               </Text>

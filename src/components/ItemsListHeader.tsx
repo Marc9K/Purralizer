@@ -31,10 +31,12 @@ export default function ItemsListHeader({
 }: ItemsListHeaderProps) {
   return (
     <>
-      <Text fontSize="xl" fontWeight="bold">
-        Import Purchase Data
-      </Text>
-      <HStack gap={3}>
+      {!hasItems && (
+        <Text fontSize="xl" fontWeight="bold">
+          Import Purchase Data
+        </Text>
+      )}
+      <HStack gap={3} width="100%" >
         <FileUpload.Root
           accept={{
             "application/json": [".json"],
@@ -47,6 +49,20 @@ export default function ItemsListHeader({
         >
           <FileUpload.HiddenInput />
           {hasItems ? (
+            <HStack justify='space-between' width="100%">
+              {totalSpentDisplay && (
+                <Box
+                  p={4}
+                  bg="blue.50"
+                  borderRadius="md"
+                  borderWidth="1px"
+                  borderColor="blue.200"
+                >
+                  <Text fontSize="lg" fontWeight="bold" color="blue.900">
+                    Total Spent: £{totalSpentDisplay}
+                  </Text>
+                </Box>
+              )}
             <Menu.Root>
               <Menu.Trigger asChild>
                 <Button borderColor="fg.inverted">Menu</Button>
@@ -68,7 +84,14 @@ export default function ItemsListHeader({
                 </Menu.Content>
               </Menu.Positioner>
             </Menu.Root>
+            </HStack>
           ) : (
+            <HStack
+              width="100%"
+              justify="center"
+              alignItems="center"
+            >
+
             <FileUpload.Trigger asChild>
               <Button
                 color="fg.muted"
@@ -78,6 +101,7 @@ export default function ItemsListHeader({
                 Select File (JSON/XLSX)
               </Button>
             </FileUpload.Trigger>
+            </HStack>
           )}
         </FileUpload.Root>
       </HStack>
@@ -109,19 +133,7 @@ export default function ItemsListHeader({
           </Button>
         </HStack>
       )}
-      {totalSpentDisplay && (
-        <Box
-          p={4}
-          bg="blue.50"
-          borderRadius="md"
-          borderWidth="1px"
-          borderColor="blue.200"
-        >
-          <Text fontSize="lg" fontWeight="bold" color="blue.900">
-            Total Spent: £{totalSpentDisplay}
-          </Text>
-        </Box>
-      )}
+      
     </>
   );
 }
