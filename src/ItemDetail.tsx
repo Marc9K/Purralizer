@@ -219,7 +219,7 @@ export default function ItemDetail() {
                   </Text>
                 </HStack>
               </HStack>
-              {daysBetweenData && daysBetweenData.length > 0 && (
+              {daysBetweenData && daysBetweenData.length > 1 && (
                 <Chart.Root maxH="sm" chart={daysBetweenChart}>
                   <LineChart data={daysBetweenChart.data}>
                     <CartesianGrid
@@ -268,7 +268,7 @@ export default function ItemDetail() {
           </Card.Root>
         )}
 
-        {chartData && chartData.length > 0 && (
+        {chartData && chartData.length > 1 && (
           <Card.Root variant="outline" className="data-card">
             <Card.Body>
               <Card.Title mb={4}>Price & Quantity Over Time</Card.Title>

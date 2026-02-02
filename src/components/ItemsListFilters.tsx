@@ -111,7 +111,7 @@ export default function ItemsListFilters({
           onSortDirectionChange(e.checked ? "desc" : "asc")
         }
         size="lg"
-        alignSelf={{ base: "flex-start", md: "flex-end" }}
+        alignSelf={{ base: "flex-end", md: "flex-end" }}
       >
         <Switch.HiddenInput />
         <Switch.Control>

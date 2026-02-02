@@ -669,7 +669,6 @@ export async function getItemWithStats(
   );
 
   const stat = stats[0]!;
-  console.log(stat);
 
   return {
     ...item,
@@ -899,9 +898,7 @@ export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
   );
   console.log(rows);
   return rows.map((row) => ({
-    ...row,
-    totalSpent: row.totalSpent ?? -1,
-    quantityList: row.quantityList ?? "",
+    ...row
   }));
 }
 
@@ -1006,6 +1003,7 @@ export async function getCombinedItemChartData(
     string,
     { totalQty: number; weightedSum: number }
   >();
+  console.log(history);
   for (const p of history) {
     const key = p.timestamp;
     const qty = p.trueQuantity;
@@ -1018,6 +1016,7 @@ export async function getCombinedItemChartData(
       byTimestamp.set(key, { totalQty: qty, weightedSum: weighted });
     }
   }
+  console.log(byTimestamp);
   const points: ChartDataPoint[] = [];
   for (const [timestamp, agg] of byTimestamp) {
     const date = new Date(timestamp);
@@ -1030,6 +1029,7 @@ export async function getCombinedItemChartData(
     });
   }
   points.sort((a, b) => a.date - b.date);
+  console.log(points);
   return points;
 }
 
