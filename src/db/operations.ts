@@ -879,8 +879,14 @@ export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
       ci.id,
       ci.name,
       ci.createdAt,
+      COALESCE(GROUP_CONCAT(a.quantity, ','), '') as quantityList,
+      COALESCE(GROUP_CONCAT(a.volume, ','), '') as volumeList,
       COALESCE(SUM(
-        p.price * COALESCE(a.volume, a.quantity)
+        p.price * CASE
+            WHEN a.volume IS NOT NULL AND a.volume != 0 THEN a.volume
+            WHEN a.quantity IS NOT NULL AND a.quantity != 0 THEN a.quantity
+            ELSE 1
+          END
       ), 0) as totalSpent
     FROM combined_items ci
     LEFT JOIN combined_item_links cil ON cil.combinedItemId = ci.id
@@ -891,9 +897,11 @@ export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
     GROUP BY ci.id, ci.name, ci.createdAt
     ORDER BY ci.createdAt DESC`
   );
+  console.log(rows);
   return rows.map((row) => ({
     ...row,
-    totalSpent: row.totalSpent ?? 0,
+    totalSpent: row.totalSpent ?? -1,
+    quantityList: row.quantityList ?? "",
   }));
 }
 
