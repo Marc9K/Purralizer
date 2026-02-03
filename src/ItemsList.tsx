@@ -45,6 +45,7 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
   const showItemsSection = itemsArray.length > 0 || itemsLoading;
   const hasSearchQuery = searchQuery.trim().length > 0;
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  const [combinedSearchQuery, setCombinedSearchQuery] = useState("");
   const [combinedItems, setCombinedItems] = useState<
     Awaited<ReturnType<typeof getCombinedItems>>
   >([]);
@@ -85,6 +86,10 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
       return filtered.length === prev.length ? prev : filtered;
     });
   }, [itemsArray, hasSearchQuery]);
+
+  const filteredCombinedItems = combinedItems.filter((item) =>
+    item.name.toLowerCase().includes(combinedSearchQuery.toLowerCase().trim())
+  );
 
   const handleSelectAll = () => {
     setSelectedItemIds(itemsArray.map((item) => item.id));
@@ -171,6 +176,7 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
           onFileAccept={handleFileAccept}
           onClearDatabase={handleClearDB}
           showSelectionControls={hasSearchQuery || editingCombinedId !== null}
+          isCombinedTab={activeTab === "combined"}
           onSelectAll={handleSelectAll}
           onDeselectAll={handleDeselectAll}
           onCombineClick={() => setCombineDialogOpen(true)}
@@ -236,8 +242,16 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
               itemsCount={itemsArray.length}
               totalItemsCount={totalItemsCount}
               itemsLoading={itemsLoading}
-              searchQuery={searchQuery}
-              onSearchQueryChange={setSearchQuery}
+              searchQuery={activeTab === "items" ? searchQuery : combinedSearchQuery}
+              onSearchQueryChange={
+                activeTab === "items" ? setSearchQuery : setCombinedSearchQuery
+              }
+              searchPlaceholder={
+                activeTab === "items"
+                  ? "Search items by name..."
+                  : "Search combined items by name..."
+              }
+              isCombinedTab={activeTab === "combined"}
               sortField={sortField}
               onSortFieldChange={setSortField}
               sortDirection={sortDirection}
@@ -279,7 +293,7 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
                 className="widened "
               >
                 <CombinedListGrid
-                  items={combinedItems}
+                  items={filteredCombinedItems}
                   loading={combinedLoading}
                   onEditCombinedItems={handleEditCombinedItems}
                 />

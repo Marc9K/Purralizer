@@ -30,6 +30,8 @@ type ItemsListFiltersProps = {
   itemsLoading: boolean;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
+  searchPlaceholder: string;
+  isCombinedTab: boolean;
   sortField: string[];
   onSortFieldChange: (value: string[]) => void;
   sortDirection: SortDirection;
@@ -42,6 +44,8 @@ export default function ItemsListFilters({
   itemsLoading,
   searchQuery,
   onSearchQueryChange,
+  searchPlaceholder,
+  isCombinedTab,
   sortField,
   onSortFieldChange,
   sortDirection,
@@ -51,12 +55,18 @@ export default function ItemsListFilters({
     searchQuery && totalItemsCount !== undefined && totalItemsCount > 0;
   const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
   const debounceTimeoutRef = useRef<number | null>(null);
+  const isSyncingSearchRef = useRef(false);
 
   useEffect(() => {
+    isSyncingSearchRef.current = true;
     setLocalSearchQuery(searchQuery);
   }, [searchQuery]);
 
   useEffect(() => {
+    if (isSyncingSearchRef.current) {
+      isSyncingSearchRef.current = false;
+      return;
+    }
     if (debounceTimeoutRef.current !== null) {
       window.clearTimeout(debounceTimeoutRef.current);
     }
@@ -84,26 +94,30 @@ export default function ItemsListFilters({
       align={{ base: "stretch", md: "flex-end" }}
     >
       <Box flex={1}>
-        <HStack gap={2} mb={2}>
-          <Text fontSize="xl" fontWeight="bold">
-            Items ({itemsCount}
-            {showTotalCount && ` of ${totalItemsCount}`})
-          </Text>
-          {itemsLoading && (
-            <ProgressCircle.Root value={null} size="sm">
-              <ProgressCircle.Circle>
-                <ProgressCircle.Track />
-                <ProgressCircle.Range />
-              </ProgressCircle.Circle>
-            </ProgressCircle.Root>
-          )}
-        </HStack>
-        <InputGroup endElement={<CloseButton onClick={() => setLocalSearchQuery("")} />}>
-        <Input
-          placeholder="Search items by name..."
-          value={localSearchQuery}
-          onChange={(e) => setLocalSearchQuery(e.target.value)}
-        />
+        {!isCombinedTab && (
+          <HStack gap={2} mb={2}>
+            <Text fontSize="xl" fontWeight="bold">
+              Items ({itemsCount}
+              {showTotalCount && ` of ${totalItemsCount}`})
+            </Text>
+            {itemsLoading && (
+              <ProgressCircle.Root value={null} size="sm">
+                <ProgressCircle.Circle>
+                  <ProgressCircle.Track />
+                  <ProgressCircle.Range />
+                </ProgressCircle.Circle>
+              </ProgressCircle.Root>
+            )}
+          </HStack>
+        )}
+        <InputGroup
+          endElement={<CloseButton onClick={() => setLocalSearchQuery("")} />}
+        >
+          <Input
+            placeholder={searchPlaceholder}
+            value={localSearchQuery}
+            onChange={(e) => setLocalSearchQuery(e.target.value)}
+          />
         </InputGroup>
       </Box>
       <HStack gap={2}>
