@@ -5,21 +5,27 @@ import {
   HStack,
   Input,
   Tabs,
-  Toaster,
-  Toast,
   VStack,
 } from "@chakra-ui/react";
+import type { createToaster } from "@chakra-ui/react";
 import { useEffect, useState } from "react";
-import { createCombinedItem, getCombinedItems } from "./db/operations";
+import {
+  createCombinedItem,
+  getCombinedItems,
+  updateCombinedItem,
+} from "./db/operations";
 import CombinedListGrid from "./components/CombinedListGrid";
 import ItemsListFilters from "./components/ItemsListFilters";
 import ItemsListGrid from "./components/ItemsListGrid";
 import ItemsListHeader from "./components/ItemsListHeader";
 import { useItemsListLogic } from "./hooks/useItemsListLogic";
 
-export default function ItemsList() {
+type ItemsListProps = {
+  statusToaster: ReturnType<typeof createToaster>;
+};
+
+export default function ItemsList({ statusToaster }: ItemsListProps) {
   const {
-    statusToaster,
     itemsArray,
     itemsLoading,
     hasItems,
@@ -34,7 +40,7 @@ export default function ItemsList() {
     handleClearDB,
     formattedTotalSpent,
     isBusy,
-  } = useItemsListLogic();
+  } = useItemsListLogic(statusToaster);
 
   const showItemsSection = itemsArray.length > 0 || itemsLoading;
   const hasSearchQuery = searchQuery.trim().length > 0;
@@ -43,8 +49,11 @@ export default function ItemsList() {
     Awaited<ReturnType<typeof getCombinedItems>>
   >([]);
   const [combinedLoading, setCombinedLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("items");
   const [combineDialogOpen, setCombineDialogOpen] = useState(false);
   const [combineName, setCombineName] = useState("");
+  const [editingCombinedId, setEditingCombinedId] = useState<number | null>(null);
+  const [editingCombinedName, setEditingCombinedName] = useState("");
 
   const loadCombinedItems = () => {
     setCombinedLoading(true);
@@ -60,10 +69,10 @@ export default function ItemsList() {
   }, []);
 
   useEffect(() => {
-    if (!hasSearchQuery) {
+    if (!hasSearchQuery && editingCombinedId === null) {
       setSelectedItemIds([]);
     }
-  }, [hasSearchQuery]);
+  }, [hasSearchQuery, editingCombinedId]);
 
   useEffect(() => {
     if (!hasSearchQuery) {
@@ -94,6 +103,46 @@ export default function ItemsList() {
     });
   };
 
+  const handleEditCombinedItems = (details: {
+    combinedItemId: number;
+    name: string;
+    itemIds: number[];
+  }) => {
+    const currentItemIds = new Set(itemsArray.map((item) => item.id));
+    setSelectedItemIds(
+      details.itemIds.filter((id) => currentItemIds.has(id))
+    );
+    setEditingCombinedId(details.combinedItemId);
+    setEditingCombinedName(details.name);
+    setActiveTab("items");
+  };
+
+  const resetEditingCombined = () => {
+    setEditingCombinedId(null);
+    setEditingCombinedName("");
+    setSelectedItemIds([]);
+  };
+
+  const handleSaveCombinedEdit = async () => {
+    console.log("updating combined item", editingCombinedId, editingCombinedName, selectedItemIds);
+    if (editingCombinedId === null) return;
+    try {
+      await updateCombinedItem(
+        editingCombinedId,
+        editingCombinedName,
+        selectedItemIds
+      );
+      resetEditingCombined();
+      window.dispatchEvent(new Event("db-update"));
+    } catch (err) {
+      statusToaster.create({
+        title: "Update failed",
+        description: err instanceof Error ? err.message : String(err),
+        type: "error",
+      });
+    }
+  };
+
   const handleCombineConfirm = async () => {
     const name = combineName.trim();
     if (!name || selectedItemIds.length === 0) return;
@@ -114,17 +163,6 @@ export default function ItemsList() {
 
   return (
     <Box p={8} className="widened">
-      <Toaster toaster={statusToaster} width="300">
-        {(toast) => (
-          <Toast.Root>
-            <Toast.Title>{toast.title}</Toast.Title>
-            {toast.description && (
-              <Toast.Description>{toast.description}</Toast.Description>
-            )}
-            <Toast.CloseTrigger />
-          </Toast.Root>
-        )}
-      </Toaster>
       <VStack gap={4} className="widened-vertical bg-vstack">
         <ItemsListHeader
           hasItems={hasItems}
@@ -132,11 +170,16 @@ export default function ItemsList() {
           totalSpentDisplay={formattedTotalSpent}
           onFileAccept={handleFileAccept}
           onClearDatabase={handleClearDB}
-          showSelectionControls={hasSearchQuery}
+          showSelectionControls={hasSearchQuery || editingCombinedId !== null}
           onSelectAll={handleSelectAll}
           onDeselectAll={handleDeselectAll}
           onCombineClick={() => setCombineDialogOpen(true)}
           combineDisabled={selectedItemIds.length === 0}
+          editingCombinedId={editingCombinedId}
+          editingCombinedName={editingCombinedName}
+          onEditingCombinedNameChange={setEditingCombinedName}
+          onSaveCombinedEdit={handleSaveCombinedEdit}
+          onCancelCombinedEdit={resetEditingCombined}
           selectAllDisabled={
             itemsArray.length === 0 ||
             selectedItemIds.length === itemsArray.length
@@ -200,7 +243,11 @@ export default function ItemsList() {
               sortDirection={sortDirection}
               onSortDirectionChange={setSortDirection}
             />
-            <Tabs.Root defaultValue="items" className="">
+            <Tabs.Root
+              value={activeTab}
+              onValueChange={(details) => setActiveTab(details.value)}
+              className=""
+            >
               <Tabs.List className="">
                 <Tabs.Trigger
                   value="items"
@@ -222,7 +269,7 @@ export default function ItemsList() {
                 <ItemsListGrid
                   items={itemsArray}
                   loading={itemsLoading}
-                  showSelectionControls={hasSearchQuery}
+                  showSelectionControls={hasSearchQuery || selectedItemIds.length > 0}
                   selectedItemIds={selectedItemIds}
                   onSelectionChange={handleSelectionChange}
                 />
@@ -234,6 +281,7 @@ export default function ItemsList() {
                 <CombinedListGrid
                   items={combinedItems}
                   loading={combinedLoading}
+                  onEditCombinedItems={handleEditCombinedItems}
                 />
               </Tabs.Content>
             </Tabs.Root>

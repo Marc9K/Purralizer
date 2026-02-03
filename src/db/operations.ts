@@ -841,6 +841,7 @@ export interface CombinedItemRecord {
   name: string;
   createdAt: string;
   totalSpent: number;
+  itemIds: number[];
 }
 
 /** Create a combined item with the given name and linked item IDs. Returns the new combined item id. */
@@ -873,11 +874,15 @@ export async function createCombinedItem(
 
 /** List all combined items. */
 export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
-  const rows = await query<CombinedItemRecord>(
+  type CombinedItemRow = Omit<CombinedItemRecord, "itemIds"> & {
+    itemIdList: string | null;
+  };
+  const rows = await query<CombinedItemRow>(
     `SELECT 
       ci.id,
       ci.name,
       ci.createdAt,
+      COALESCE(GROUP_CONCAT(cil.itemId, ','), '') as itemIdList,
       COALESCE(GROUP_CONCAT(a.quantity, ','), '') as quantityList,
       COALESCE(GROUP_CONCAT(a.volume, ','), '') as volumeList,
       COALESCE(SUM(
@@ -898,7 +903,16 @@ export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
   );
   console.log(rows);
   return rows.map((row) => ({
-    ...row
+    id: row.id,
+    name: row.name,
+    createdAt: row.createdAt,
+    totalSpent: row.totalSpent,
+    itemIds: row.itemIdList
+      ? row.itemIdList
+          .split(",")
+          .map((value) => Number(value))
+          .filter((value) => !Number.isNaN(value))
+      : [],
   }));
 }
 
@@ -911,6 +925,44 @@ export async function deleteCombinedItem(combinedItemId: number): Promise<void> 
       true
     );
     await execute("DELETE FROM combined_items WHERE id = ?", [combinedItemId], true);
+  });
+}
+
+/** Update a combined item name and linked item IDs. */
+export async function updateCombinedItem(
+  combinedItemId: number,
+  name: string,
+  itemIds: number[]
+): Promise<void> {
+  const uniqueItemIds = Array.from(new Set(itemIds));
+  if (uniqueItemIds.length === 0) {
+    throw new Error("At least one item must be selected");
+  }
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    throw new Error("Name is required");
+  }
+  await runInTransaction(async () => {
+    await execute(
+      "UPDATE combined_items SET name = ? WHERE id = ?",
+      [trimmedName, combinedItemId],
+      true
+    );
+    await execute(
+      "DELETE FROM combined_item_links WHERE combinedItemId = ?",
+      [combinedItemId],
+      true
+    );
+    const linkParams = uniqueItemIds.map((itemId) => [
+      combinedItemId,
+      itemId,
+    ]);
+    await insertMany(
+      "INSERT INTO combined_item_links (combinedItemId, itemId) VALUES (?, ?)",
+      linkParams,
+      true,
+      true
+    );
   });
 }
 

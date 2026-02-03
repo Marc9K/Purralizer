@@ -1,19 +1,26 @@
-import { Button, Center, HStack, ProgressCircle, SimpleGrid, Text } from "@chakra-ui/react";
+import { Button, Center, HStack, Icon, ProgressCircle, SimpleGrid, Text } from "@chakra-ui/react";
 import { Link } from "react-router-dom";
 import { Card } from "@chakra-ui/react";
 import type { CombinedItemRecord } from "../db/operations";
 import { deleteCombinedItem } from "../db/operations";
 import { formatNumber } from "../utils/format";
 import { useState } from "react";
+import { IoPencil, IoTrashBin } from "react-icons/io5";
 
 type CombinedListGridProps = {
   items: CombinedItemRecord[];
   loading: boolean;
+  onEditCombinedItems?: (details: {
+    combinedItemId: number;
+    name: string;
+    itemIds: number[];
+  }) => void;
 };
 
 export default function CombinedListGrid({
   items,
   loading,
+  onEditCombinedItems,
 }: CombinedListGridProps) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -88,6 +95,9 @@ export default function CombinedListGrid({
                 className=""
               >
                 <Card.Title className="">{item.name}</Card.Title>
+
+                <HStack>
+
                 <Button
                   size="xs"
                   variant="outline"
@@ -99,8 +109,30 @@ export default function CombinedListGrid({
                     void handleDelete(item.id);
                   }}
                 >
-                  Delete
+                  <Icon>
+                  <IoTrashBin />
+                  </Icon>
                 </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  colorPalette="blue"
+                  disabled={!onEditCombinedItems || item.itemIds.length === 0}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onEditCombinedItems?.({
+                      combinedItemId: item.id,
+                      name: item.name,
+                      itemIds: item.itemIds,
+                    });
+                  }}
+                >
+                  <Icon>
+                  <IoPencil />
+                  </Icon>
+                </Button>
+                </HStack>
               </HStack>
               <Text mt={2} fontSize="sm" color="fg.muted">
                 Total Spent: £{formatNumber(item.totalSpent)}

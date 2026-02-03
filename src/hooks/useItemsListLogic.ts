@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createToaster } from "@chakra-ui/react";
+import type { createToaster } from "@chakra-ui/react";
 import {
   importPurchaseData,
   importPurchaseDataFromXLSX,
@@ -69,14 +69,11 @@ const Status = {
 export type SortField = "totalQuantity" | "totalSpent" | "latestPrice" | "name";
 export type SortDirection = "asc" | "desc";
 
-const statusToaster = createToaster({
-  placement: "top-end",
-  pauseOnPageIdle: true,
-});
-
 type FileAcceptDetails = { files: File[] };
 
-export function useItemsListLogic() {
+type StatusToaster = ReturnType<typeof createToaster>;
+
+export function useItemsListLogic(statusToaster: StatusToaster) {
   const [status, setStatus] = useState<string>(Status.IDLE);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortField, setSortField] = useState<string[]>(["totalSpent"]);

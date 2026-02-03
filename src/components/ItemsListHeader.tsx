@@ -1,4 +1,13 @@
-import { Button, Text, Box, FileUpload, HStack, Menu } from "@chakra-ui/react";
+import {
+  Button,
+  Text,
+  Box,
+  FileUpload,
+  HStack,
+  Input,
+  Menu,
+  VStack,
+} from "@chakra-ui/react";
 
 type ItemsListHeaderProps = {
   hasItems: boolean;
@@ -13,6 +22,11 @@ type ItemsListHeaderProps = {
   combineDisabled: boolean;
   selectAllDisabled: boolean;
   deselectAllDisabled: boolean;
+  editingCombinedId: number | null;
+  editingCombinedName: string;
+  onEditingCombinedNameChange: (value: string) => void;
+  onSaveCombinedEdit: () => void;
+  onCancelCombinedEdit: () => void;
 };
 
 export default function ItemsListHeader({
@@ -28,7 +42,13 @@ export default function ItemsListHeader({
   combineDisabled,
   selectAllDisabled,
   deselectAllDisabled,
+  editingCombinedId,
+  editingCombinedName,
+  onEditingCombinedNameChange,
+  onSaveCombinedEdit,
+  onCancelCombinedEdit,
 }: ItemsListHeaderProps) {
+  const isEditingCombined = editingCombinedId !== null;
   return (
     <>
       {!hasItems && (
@@ -106,32 +126,65 @@ export default function ItemsListHeader({
         </FileUpload.Root>
       </HStack>
       {showSelectionControls && (
-        <HStack gap={2}>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onSelectAll}
-            disabled={selectAllDisabled}
-          >
-            Select all
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onDeselectAll}
-            disabled={deselectAllDisabled}
-          >
-            Deselect all
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onCombineClick}
-            disabled={combineDisabled}
-          >
-            Combine
-          </Button>
-        </HStack>
+        <VStack align="start" gap={2}>
+          <HStack gap={2}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onSelectAll}
+              disabled={selectAllDisabled}
+            >
+              Select all
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onDeselectAll}
+              disabled={deselectAllDisabled}
+            >
+              Deselect all
+            </Button>
+            {isEditingCombined ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onSaveCombinedEdit}
+                  disabled={!editingCombinedName.trim() || combineDisabled}
+                >
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onCancelCombinedEdit}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onCombineClick}
+                disabled={combineDisabled}
+              >
+                Combine
+              </Button>
+            )}
+          </HStack>
+          {isEditingCombined && (
+            <Input
+              size="sm"
+              placeholder="Combined item name"
+              value={editingCombinedName}
+              onChange={(event) =>
+                onEditingCombinedNameChange(event.target.value)
+              }
+              width="240px"
+            />
+          )}
+        </VStack>
       )}
       
     </>
