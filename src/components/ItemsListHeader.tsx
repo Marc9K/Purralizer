@@ -8,6 +8,7 @@ import {
   Menu,
   VStack,
 } from "@chakra-ui/react";
+import TescoDataHelp from "./TescoDataHelp";
 
 type ItemsListHeaderProps = {
   hasItems: boolean;
@@ -106,22 +107,18 @@ export default function ItemsListHeader({
             </Menu.Root>
             </HStack>
           ) : (
-            <HStack
-              width="100%"
-              justify="center"
-              alignItems="center"
-            >
-
-            <FileUpload.Trigger asChild>
-              <Button
-                color="fg.muted"
-                borderColor="fg.default"
-                variant="outline"
-              >
-                Select File (JSON/XLSX)
-              </Button>
-            </FileUpload.Trigger>
-            </HStack>
+            <VStack width="100%" justify="center" alignItems="center" gap={4}>
+              <FileUpload.Trigger asChild>
+                <Button
+                  color="fg.muted"
+                  borderColor="fg.default"
+                  variant="outline"
+                >
+                  Select Tesco purchase history JSON File
+                </Button>
+              </FileUpload.Trigger>
+              <TescoDataHelp />
+            </VStack>
           )}
         </FileUpload.Root>
       </HStack>

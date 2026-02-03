@@ -25,6 +25,7 @@
     "react-router-dom": "^7.10.0",
     "recharts": "^3.5.1",
     "sql.js": "^1.13.0",
+    "use-mask-input": "^3.6.1",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.9"
   },
