@@ -18,9 +18,15 @@ import type { SortDirection } from "../hooks/useItemsListLogic";
 const sortFieldOptions = createListCollection({
   items: [
     { label: "Name", value: "name" },
-    { label: "Total Bought", value: "totalQuantity" },
     { label: "Total Spent", value: "totalSpent" },
+    { label: "Total Bought", value: "totalQuantity" },
     { label: "Latest Price", value: "latestPrice" },
+  ],
+});
+const combinedSortFieldOptions = createListCollection({
+  items: [
+    { label: "Name", value: "name" },
+    { label: "Total Spent", value: "totalSpent" },
   ],
 });
 
@@ -56,6 +62,9 @@ export default function ItemsListFilters({
   const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
   const debounceTimeoutRef = useRef<number | null>(null);
   const isSyncingSearchRef = useRef(false);
+  const activeSortFieldOptions = isCombinedTab
+    ? combinedSortFieldOptions
+    : sortFieldOptions;
 
   useEffect(() => {
     isSyncingSearchRef.current = true;
@@ -122,7 +131,7 @@ export default function ItemsListFilters({
       </Box>
       <HStack gap={2}>
       <Select.Root
-        collection={sortFieldOptions}
+        collection={activeSortFieldOptions}
         value={sortField}
         onValueChange={(e) => onSortFieldChange(e.value)}
         size="sm"
@@ -141,7 +150,7 @@ export default function ItemsListFilters({
         <Portal>
           <Select.Positioner>
             <Select.Content>
-              {sortFieldOptions.items.map((option) => (
+              {activeSortFieldOptions.items.map((option) => (
                 <Select.Item item={option} key={option.value} color="fg.muted">
                   {option.label}
                   <Select.ItemIndicator />

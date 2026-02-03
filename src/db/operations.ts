@@ -873,10 +873,17 @@ export async function createCombinedItem(
 }
 
 /** List all combined items. */
-export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
+export async function getCombinedItems(
+  sortField: "name" | "totalSpent" = "totalSpent",
+  sortDirection: "asc" | "desc" = "desc"
+): Promise<CombinedItemRecord[]> {
   type CombinedItemRow = Omit<CombinedItemRecord, "itemIds"> & {
     itemIdList: string | null;
   };
+  const orderByClause =
+    sortField === "name"
+      ? `ci.name ${sortDirection}`
+      : `totalSpent ${sortDirection}`;
   const rows = await query<CombinedItemRow>(
     `SELECT 
       ci.id,
@@ -899,7 +906,7 @@ export async function getCombinedItems(): Promise<CombinedItemRecord[]> {
     LEFT JOIN purchases pur ON pp.purchaseId = pur.id
     LEFT JOIN amounts a ON a.purchaseId = pur.id AND a.itemId = p.itemId
     GROUP BY ci.id, ci.name, ci.createdAt
-    ORDER BY ci.createdAt DESC`
+    ORDER BY ${orderByClause}`
   );
   console.log(rows);
   return rows.map((row) => ({

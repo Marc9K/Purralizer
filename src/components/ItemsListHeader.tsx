@@ -19,6 +19,7 @@ type ItemsListHeaderProps = {
   onFileAccept: (details: { files: File[] }) => void;
   onClearDatabase: () => void;
   showSelectionControls: boolean;
+  isCombinedTab: boolean;
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onCombineClick: () => void;
@@ -39,6 +40,7 @@ export default function ItemsListHeader({
   onFileAccept,
   onClearDatabase,
   showSelectionControls,
+  isCombinedTab,
   onSelectAll,
   onDeselectAll,
   onCombineClick,
@@ -124,7 +126,7 @@ export default function ItemsListHeader({
           )}
         </FileUpload.Root>
       </HStack>
-      {showSelectionControls && (
+      {showSelectionControls && !isCombinedTab && (
         <ActionBar.Root open={showSelectionControls}>
           <Portal>
             <ActionBar.Positioner>

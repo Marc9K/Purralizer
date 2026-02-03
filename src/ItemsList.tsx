@@ -19,6 +19,7 @@ import ItemsListFilters from "./components/ItemsListFilters";
 import ItemsListGrid from "./components/ItemsListGrid";
 import ItemsListHeader from "./components/ItemsListHeader";
 import { useItemsListLogic } from "./hooks/useItemsListLogic";
+import type { SortDirection } from "./hooks/useItemsListLogic";
 
 type ItemsListProps = {
   statusToaster: ReturnType<typeof createToaster>;
@@ -46,6 +47,11 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
   const hasSearchQuery = searchQuery.trim().length > 0;
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [combinedSearchQuery, setCombinedSearchQuery] = useState("");
+  const [combinedSortField, setCombinedSortField] = useState<string[]>([
+    "totalSpent",
+  ]);
+  const [combinedSortDirection, setCombinedSortDirection] =
+    useState<SortDirection>("desc");
   const [combinedItems, setCombinedItems] = useState<
     Awaited<ReturnType<typeof getCombinedItems>>
   >([]);
@@ -57,17 +63,26 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
   const [editingCombinedName, setEditingCombinedName] = useState("");
 
   const loadCombinedItems = () => {
+    const currentSortField = (combinedSortField[0] || "totalSpent") as
+      | "name"
+      | "totalSpent";
     setCombinedLoading(true);
-    getCombinedItems()
+    getCombinedItems(currentSortField, combinedSortDirection)
       .then(setCombinedItems)
       .finally(() => setCombinedLoading(false));
   };
 
   useEffect(() => {
     loadCombinedItems();
-    window.addEventListener("db-update", loadCombinedItems);
-    return () => window.removeEventListener("db-update", loadCombinedItems);
-  }, []);
+  }, [combinedSortField, combinedSortDirection]);
+
+  useEffect(() => {
+    const handleCombinedUpdate = () => {
+      loadCombinedItems();
+    };
+    window.addEventListener("db-update", handleCombinedUpdate);
+    return () => window.removeEventListener("db-update", handleCombinedUpdate);
+  }, [combinedSortField, combinedSortDirection]);
 
   useEffect(() => {
     if (!hasSearchQuery && editingCombinedId === null) {
@@ -242,7 +257,9 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
               itemsCount={itemsArray.length}
               totalItemsCount={totalItemsCount}
               itemsLoading={itemsLoading}
-              searchQuery={activeTab === "items" ? searchQuery : combinedSearchQuery}
+              searchQuery={
+                activeTab === "items" ? searchQuery : combinedSearchQuery
+              }
               onSearchQueryChange={
                 activeTab === "items" ? setSearchQuery : setCombinedSearchQuery
               }
@@ -252,10 +269,18 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
                   : "Search combined items by name..."
               }
               isCombinedTab={activeTab === "combined"}
-              sortField={sortField}
-              onSortFieldChange={setSortField}
-              sortDirection={sortDirection}
-              onSortDirectionChange={setSortDirection}
+              sortField={activeTab === "items" ? sortField : combinedSortField}
+              onSortFieldChange={
+                activeTab === "items" ? setSortField : setCombinedSortField
+              }
+              sortDirection={
+                activeTab === "items" ? sortDirection : combinedSortDirection
+              }
+              onSortDirectionChange={
+                activeTab === "items"
+                  ? setSortDirection
+                  : setCombinedSortDirection
+              }
             />
             <Tabs.Root
               value={activeTab}
