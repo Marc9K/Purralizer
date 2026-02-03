@@ -26,6 +26,7 @@ export default function ItemCard({
     >
       <Card.Root
         width="100%"
+        maxW="xl"
         height="100%"
         variant="outline"
         cursor={disableNavigation ? "default" : "pointer"}

@@ -91,7 +91,7 @@ export default function PurchaseHistoryTable({
   }
 
   return (
-    <Card.Root variant="outline" className="data-card">
+    <Card.Root variant="outline" className="data-card" maxW='xl'>
       <Card.Body>
         <Card.Title mb={4}>Purchase History</Card.Title>
         <Table.Root className="data-table">

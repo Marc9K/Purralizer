@@ -9,7 +9,10 @@ import {
   Switch,
   Text,
   createListCollection,
+  InputGroup,
+  CloseButton,
 } from "@chakra-ui/react";
+import { useEffect, useRef, useState } from "react";
 import type { SortDirection } from "../hooks/useItemsListLogic";
 
 const sortFieldOptions = createListCollection({
@@ -46,6 +49,33 @@ export default function ItemsListFilters({
 }: ItemsListFiltersProps) {
   const showTotalCount =
     searchQuery && totalItemsCount !== undefined && totalItemsCount > 0;
+  const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
+  const debounceTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setLocalSearchQuery(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (debounceTimeoutRef.current !== null) {
+      window.clearTimeout(debounceTimeoutRef.current);
+    }
+    if (localSearchQuery.trim().length === 0) {
+      onSearchQueryChange("");
+      return;
+    }
+    debounceTimeoutRef.current = window.setTimeout(() => {
+      if (localSearchQuery !== searchQuery) {
+        onSearchQueryChange(localSearchQuery);
+      }
+    }, 800);
+
+    return () => {
+      if (debounceTimeoutRef.current !== null) {
+        window.clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, [localSearchQuery, onSearchQueryChange, searchQuery]);
 
   return (
     <Stack
@@ -68,11 +98,13 @@ export default function ItemsListFilters({
             </ProgressCircle.Root>
           )}
         </HStack>
+        <InputGroup endElement={<CloseButton onClick={() => setLocalSearchQuery("")} />}>
         <Input
           placeholder="Search items by name..."
-          value={searchQuery}
-          onChange={(e) => onSearchQueryChange(e.target.value)}
+          value={localSearchQuery}
+          onChange={(e) => setLocalSearchQuery(e.target.value)}
         />
+        </InputGroup>
       </Box>
       <HStack gap={2}>
       <Select.Root
