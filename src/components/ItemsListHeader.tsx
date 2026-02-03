@@ -1,4 +1,5 @@
 import {
+  ActionBar,
   Button,
   Text,
   Box,
@@ -6,6 +7,7 @@ import {
   HStack,
   Input,
   Menu,
+  Portal,
   VStack,
 } from "@chakra-ui/react";
 import TescoDataHelp from "./TescoDataHelp";
@@ -123,65 +125,75 @@ export default function ItemsListHeader({
         </FileUpload.Root>
       </HStack>
       {showSelectionControls && (
-        <VStack align="start" gap={2}>
-          <HStack gap={2}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onSelectAll}
-              disabled={selectAllDisabled}
-            >
-              Select all
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onDeselectAll}
-              disabled={deselectAllDisabled}
-            >
-              Deselect all
-            </Button>
-            {isEditingCombined ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onSaveCombinedEdit}
-                  disabled={!editingCombinedName.trim() || combineDisabled}
-                >
-                  Save
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onCancelCombinedEdit}
-                >
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onCombineClick}
-                disabled={combineDisabled}
-              >
-                Combine
-              </Button>
-            )}
-          </HStack>
-          {isEditingCombined && (
-            <Input
-              size="sm"
-              placeholder="Combined item name"
-              value={editingCombinedName}
-              onChange={(event) =>
-                onEditingCombinedNameChange(event.target.value)
-              }
-              width="240px"
-            />
-          )}
-        </VStack>
+        <ActionBar.Root open={showSelectionControls}>
+          <Portal>
+            <ActionBar.Positioner>
+              <ActionBar.Content alignItems="flex-start" gap={2}>
+              {isEditingCombined && (
+                <>
+                  <Input
+                    size="sm"
+                    placeholder="Combined item name"
+                    value={editingCombinedName}
+                    onChange={(event) =>
+                      onEditingCombinedNameChange(event.target.value)
+                    }
+                    width="240px"
+                  />
+                <ActionBar.Separator />
+                </>
+                )}
+                <HStack gap={2} flexWrap="wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onSelectAll}
+                    disabled={selectAllDisabled}
+                  >
+                    Select all
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onDeselectAll}
+                    disabled={deselectAllDisabled}
+                  >
+                    Deselect all
+                  </Button>
+                  {isEditingCombined ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="solid"
+                        onClick={onSaveCombinedEdit}
+                        disabled={!editingCombinedName.trim() || combineDisabled}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="subtle"
+                        color='red'
+                        onClick={onCancelCombinedEdit}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={onCombineClick}
+                      disabled={combineDisabled}
+                    >
+                      Combine
+                    </Button>
+                  )}
+                </HStack>
+              </ActionBar.Content>
+            </ActionBar.Positioner>
+          </Portal>
+        </ActionBar.Root>
       )}
       
     </>
