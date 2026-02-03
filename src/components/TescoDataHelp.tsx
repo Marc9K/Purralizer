@@ -1,4 +1,15 @@
-import { Box, Checkbox, Input, Link, Text, VStack } from "@chakra-ui/react";
+import {
+  Box,
+  Button,
+  Checkbox,
+  CodeBlock,
+  IconButton,
+  Input,
+  Link,
+  Popover,
+  Text,
+  VStack,
+} from "@chakra-ui/react";
 import { useEffect, useState } from "react";
 import { withMask } from "use-mask-input";
 
@@ -43,6 +54,49 @@ function HelpLink({
 const withMaskValue = (value: string) =>
   value.replace(/[^a-z0-9]/gi, "").slice(0, 6).toUpperCase();
 
+const samplePurchaseJson = `{
+  "purchases": [
+    {
+      "timestamp": "string",
+      "type": "string",
+      "says": "string",
+      "basketValueGross": "number",
+      "overallBasketSavings": "number",
+      "basketValueNet": "number",
+      "numberOfItems": "number",
+      "payment": [
+        { "type": "string", "category": "string", "amount": "number" }
+      ],
+      "items": [
+        {
+          "name": "string",
+          "quantity": "number",
+          "weight": "number",
+          "price": "number",
+          "volume": "number"
+        }
+      ]
+    }
+  ]
+}`;
+
+function JsonCodeBlock({ value }: { value: string }) {
+  return (
+    <CodeBlock.Root code={value} language="json">
+      <CodeBlock.CopyTrigger asChild>
+            <IconButton variant="ghost" size="2xs">
+              <CodeBlock.CopyIndicator />
+            </IconButton>
+          </CodeBlock.CopyTrigger>
+      <CodeBlock.Content>
+        <CodeBlock.Code fontSize="xs">
+          <CodeBlock.CodeText />
+        </CodeBlock.Code>
+      </CodeBlock.Content>
+    </CodeBlock.Root>
+  );
+}
+
 export default function TescoDataHelp() {
   const [requestNote, setRequestNote] = useState("");
 
@@ -82,6 +136,11 @@ export default function TescoDataHelp() {
         <Text fontWeight="semibold">
           Need help downloading your <TescoWord /> purchase history?
         </Text>
+        <Text color="fg.muted">
+          This app helps you upload your purchase history so you can
+          review your items, see your total spent, and explore charts that
+          highlight your shopping patterns.
+        </Text>
         
         <Text color="fg.muted">
           <HelpLink href="https://www.tesco.com/account/data-portability/en-GB/requests/new?success=true">
@@ -118,6 +177,23 @@ export default function TescoDataHelp() {
         <Text color="fg.muted">
           Once the file is ready, download the JSON and upload it above
         </Text>
+        <Popover.Root>
+          <Popover.Trigger asChild>
+            <Button size="sm" variant="outline">
+              View example JSON format
+            </Button>
+          </Popover.Trigger>
+          <Popover.Positioner>
+          <Popover.Content p={3} maxW="520px">
+              <Text fontWeight="semibold" mb={2}>
+                Example file format
+              </Text>
+            <Box maxH="260px" overflowY="auto">
+              <JsonCodeBlock value={samplePurchaseJson} />
+            </Box>
+            </Popover.Content>
+          </Popover.Positioner>
+        </Popover.Root>
       </VStack>
     </Box>
   );

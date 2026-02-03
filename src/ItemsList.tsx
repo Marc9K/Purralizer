@@ -1,12 +1,4 @@
-import {
-  Box,
-  Button,
-  Dialog,
-  HStack,
-  Input,
-  Tabs,
-  VStack,
-} from "@chakra-ui/react";
+import { Box, Tabs, VStack } from "@chakra-ui/react";
 import type { createToaster } from "@chakra-ui/react";
 import { useEffect, useState } from "react";
 import {
@@ -57,8 +49,6 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
   >([]);
   const [combinedLoading, setCombinedLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("items");
-  const [combineDialogOpen, setCombineDialogOpen] = useState(false);
-  const [combineName, setCombineName] = useState("");
   const [editingCombinedId, setEditingCombinedId] = useState<number | null>(null);
   const [editingCombinedName, setEditingCombinedName] = useState("");
 
@@ -163,14 +153,11 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
     }
   };
 
-  const handleCombineConfirm = async () => {
-    const name = combineName.trim();
-    if (!name || selectedItemIds.length === 0) return;
+  const handleCombineConfirm = async (name: string) => {
+    if (!name.trim() || selectedItemIds.length === 0) return;
     try {
-      await createCombinedItem(name, selectedItemIds);
+      await createCombinedItem(name.trim(), selectedItemIds);
       setSelectedItemIds([]);
-      setCombineName("");
-      setCombineDialogOpen(false);
       window.dispatchEvent(new Event("db-update"));
     } catch (err) {
       statusToaster.create({
@@ -179,6 +166,17 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
         type: "error",
       });
     }
+  };
+
+  const handleCombineClick = async () => {
+    if (selectedItemIds.length === 0) {
+      return;
+    }
+    const name = window.prompt("Name for combined item");
+    if (!name || !name.trim()) {
+      return;
+    }
+    await handleCombineConfirm(name);
   };
 
   return (
@@ -194,7 +192,7 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
           isCombinedTab={activeTab === "combined"}
           onSelectAll={handleSelectAll}
           onDeselectAll={handleDeselectAll}
-          onCombineClick={() => setCombineDialogOpen(true)}
+          onCombineClick={handleCombineClick}
           combineDisabled={selectedItemIds.length === 0}
           editingCombinedId={editingCombinedId}
           editingCombinedName={editingCombinedName}
@@ -207,45 +205,6 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
           }
           deselectAllDisabled={selectedItemIds.length === 0}
         />
-        <Dialog.Root
-          open={combineDialogOpen}
-          onOpenChange={(e) => setCombineDialogOpen(e.open)}
-        >
-          <Dialog.Backdrop />
-          <Dialog.Positioner>
-            <Dialog.Content>
-              <Dialog.Header>
-                <Dialog.Title>Combine items</Dialog.Title>
-                <Dialog.CloseTrigger />
-              </Dialog.Header>
-              <Dialog.Body>
-                <Input
-                  placeholder="Name for combined item"
-                  value={combineName}
-                  onChange={(e) => setCombineName(e.target.value)}
-                />
-              </Dialog.Body>
-              <Dialog.Footer>
-                <HStack gap={2}>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setCombineDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleCombineConfirm}
-                    disabled={!combineName.trim() || selectedItemIds.length === 0}
-                  >
-                    Create
-                  </Button>
-                </HStack>
-              </Dialog.Footer>
-            </Dialog.Content>
-          </Dialog.Positioner>
-        </Dialog.Root>
         {showItemsSection && (
           <VStack
             gap={4}
