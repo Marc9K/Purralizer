@@ -5,6 +5,7 @@ import mkcert from "vite-plugin-mkcert";
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: "/react-gh-pages/",
   plugins: [
     mkcert(),
     react(),
@@ -19,8 +20,8 @@ export default defineConfig({
         background_color: "#ffffff",
         display: "standalone",
         orientation: "portrait",
-        scope: "/",
-        start_url: "/",
+        scope: "/react-gh-pages/",
+        start_url: "/react-gh-pages/",
         icons: [
           {
             src: "icon.svg",
