@@ -186,7 +186,7 @@ export default function TescoDataHelp() {
           <Popover.Positioner>
           <Popover.Content p={3} maxW="520px">
               <Text fontWeight="semibold" mb={2}>
-                Example file format
+                Example JSON format
               </Text>
             <Box maxH="260px" overflowY="auto">
               <JsonCodeBlock value={samplePurchaseJson} />
