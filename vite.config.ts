@@ -5,7 +5,7 @@ import mkcert from "vite-plugin-mkcert";
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: "/react-gh-pages/",
+  base: "/Purralizer/",
   plugins: [
     mkcert(),
     react(),
@@ -20,8 +20,8 @@ export default defineConfig({
         background_color: "#ffffff",
         display: "standalone",
         orientation: "portrait",
-        scope: "/react-gh-pages/",
-        start_url: "/react-gh-pages/",
+        scope: "/Purralizer/",
+        start_url: "/Purralizer/",
         icons: [
           {
             src: "icon.svg",

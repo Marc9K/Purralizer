@@ -2,7 +2,7 @@
   "name": "purralizer",
   "private": true,
   "version": "0.0.0",
-  "homepage": "https://Purralizer.github.io/",
+  "homepage": "https://marc9k.github.io/Purralizer/",
   "type": "module",
   "scripts": {
     "predeploy": "npm run build",

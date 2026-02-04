@@ -9,7 +9,7 @@ import App from "./App.tsx";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ChakraProvider value={defaultSystem}>
-      <BrowserRouter basename="https://Purralizer.github.io/">
+      <BrowserRouter>
         <App />
       </BrowserRouter>
     </ChakraProvider>
