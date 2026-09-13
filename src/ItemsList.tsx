@@ -12,6 +12,7 @@ import ItemsListGrid from "./components/ItemsListGrid";
 import ItemsListHeader from "./components/ItemsListHeader";
 import { useItemsListLogic } from "./hooks/useItemsListLogic";
 import type { SortDirection } from "./hooks/useItemsListLogic";
+import { requireItemName } from "./utils/debugGuards";
 
 type ItemsListProps = {
   statusToaster: ReturnType<typeof createToaster>;
@@ -92,9 +93,13 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
     });
   }, [itemsArray, hasSearchQuery]);
 
-  const filteredCombinedItems = combinedItems.filter((item) =>
-    item.name.toLowerCase().includes(combinedSearchQuery.toLowerCase().trim())
-  );
+  const filteredCombinedItems = combinedItems.filter((item) => {
+    const name = requireItemName(item, "ItemsList: filter combined items");
+    if (name === null) return false;
+    return name
+      .toLowerCase()
+      .includes((combinedSearchQuery ?? "").toLowerCase().trim());
+  });
 
   const handleSelectAll = () => {
     setSelectedItemIds(itemsArray.map((item) => item.id));

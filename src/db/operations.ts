@@ -8,6 +8,7 @@ import {
 } from "../db";
 // @ts-ignore - xlsx/xlsx.mjs doesn't have types but works at runtime
 import * as XLSX from "xlsx/xlsx.mjs";
+import { requireItemName } from "../utils/debugGuards";
 
 // Types
 export interface PurchaseData {
@@ -290,6 +291,9 @@ export async function importPurchaseDataFromXLSX(
     // Use the existing import logic
     return await importPurchaseDataFromObject(purchaseData);
   } catch (error) {
+    // Keeps the stack trace (and its origin) in the console — the caller only
+    // ever sees the stringified message.
+    console.error("[importPurchaseDataFromXLSX] failed:", error);
     return { success: false, error: String(error) };
   }
 }
@@ -355,6 +359,8 @@ async function importPurchaseDataFromObject(
 
         if (!purchaseId) continue;
 
+        const purchaseLabel = `importPurchaseDataFromObject: purchase #${purchaseIndex} (${purchase.timestamp ?? "no timestamp"})`;
+
         // If purchase has no items, add them
         if (purchase.items.length > 0) {
           // Collect all unique items and prices for this purchase
@@ -367,7 +373,12 @@ async function importPurchaseDataFromObject(
 
           // First pass: find existing items and collect new ones
           for (const item of purchase.items) {
-            const itemNameLower = item.name.toLowerCase();
+            const itemName = requireItemName(
+              item,
+              `${purchaseLabel} -> look up existing items`
+            );
+            if (itemName === null) continue;
+            const itemNameLower = itemName.toLowerCase();
             if (!itemNameToId.has(itemNameLower)) {
               const existingItems = await query<{ id: number }>(
                 `SELECT id FROM items WHERE LOWER(name) = ?`,
@@ -376,7 +387,7 @@ async function importPurchaseDataFromObject(
               if (existingItems.length > 0) {
                 itemNameToId.set(itemNameLower, existingItems[0]!.id);
               } else {
-                newItemParams.push([item.name]);
+                newItemParams.push([itemName]);
               }
             }
           }
@@ -393,7 +404,12 @@ async function importPurchaseDataFromObject(
             // Map new item IDs to names
             let newItemIndex = 0;
             for (const item of purchase.items) {
-              const itemNameLower = item.name.toLowerCase();
+              const itemName = requireItemName(
+                item,
+                `${purchaseLabel} -> map new item ids`
+              );
+              if (itemName === null) continue;
+              const itemNameLower = itemName.toLowerCase();
               if (!itemNameToId.has(itemNameLower)) {
                 itemNameToId.set(itemNameLower, newItemIds[newItemIndex]!);
                 newItemIndex++;
@@ -403,7 +419,12 @@ async function importPurchaseDataFromObject(
 
           // Second pass: find existing prices and collect new ones, build amount params
           for (const item of purchase.items) {
-            const itemNameLower = item.name.toLowerCase();
+            const itemName = requireItemName(
+              item,
+              `${purchaseLabel} -> collect prices and amounts`
+            );
+            if (itemName === null) continue;
+            const itemNameLower = itemName.toLowerCase();
             const itemId = itemNameToId.get(itemNameLower);
             if (!itemId) continue;
 
@@ -441,7 +462,12 @@ async function importPurchaseDataFromObject(
             // Map new price IDs
             let newPriceIndex = 0;
             for (const item of purchase.items) {
-              const itemNameLower = item.name.toLowerCase();
+              const itemName = requireItemName(
+                item,
+                `${purchaseLabel} -> map new price ids`
+              );
+              if (itemName === null) continue;
+              const itemNameLower = itemName.toLowerCase();
               const itemId = itemNameToId.get(itemNameLower);
               if (!itemId) continue;
 
@@ -455,7 +481,12 @@ async function importPurchaseDataFromObject(
 
           // Build price_purchases params
           for (const item of purchase.items) {
-            const itemNameLower = item.name.toLowerCase();
+            const itemName = requireItemName(
+              item,
+              `${purchaseLabel} -> build price_purchases`
+            );
+            if (itemName === null) continue;
+            const itemNameLower = itemName.toLowerCase();
             const itemId = itemNameToId.get(itemNameLower);
             if (!itemId) continue;
 
@@ -498,6 +529,9 @@ async function importPurchaseDataFromObject(
 
     return { success: true };
   } catch (error) {
+    // Keeps the stack trace (and its origin) in the console — the caller only
+    // ever sees the stringified message.
+    console.error("[importPurchaseDataFromObject] failed:", error);
     return { success: false, error: String(error) };
   }
 }
@@ -511,6 +545,9 @@ export async function importPurchaseData(
     const data: PurchaseData = JSON.parse(text);
     return await importPurchaseDataFromObject(data);
   } catch (error) {
+    // Keeps the stack trace (and its origin) in the console — the caller only
+    // ever sees the stringified message.
+    console.error("[importPurchaseData] failed:", error);
     return { success: false, error: String(error) };
   }
 }
@@ -526,6 +563,9 @@ export async function clearAllData(): Promise<{
     window.dispatchEvent(new Event("db-update"));
     return { success: true };
   } catch (error) {
+    // Keeps the stack trace (and its origin) in the console — the caller only
+    // ever sees the stringified message.
+    console.error("[clearAllData] failed:", error);
     return { success: false, error: String(error) };
   }
 }

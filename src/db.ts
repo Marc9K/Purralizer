@@ -1,5 +1,7 @@
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 
+import { describeValue } from "./utils/debugGuards";
+
 export interface Purchase {
   id?: number;
   timestamp: string;
@@ -243,11 +245,53 @@ export async function clearDatabase(): Promise<void> {
   saveDatabase();
 }
 
+// --- Bind-parameter validation (debugging aid) -------------------------------
+// sql.js reports bad bind values as "Wrong API use : tried to bind a value of
+// an unknown type (undefined)." with no hint about which statement or which
+// parameter. These checks run first and raise the same failure with the SQL,
+// the parameter position and the offending value attached.
+
+const singleLine = (sql: string): string => sql.replace(/\s+/g, " ").trim();
+
+const describeParams = (params: readonly unknown[]): string =>
+  `[${params.map((value) => describeValue(value)).join(", ")}]`;
+
+function assertBindableParams(
+  helper: string,
+  sql: string,
+  params: readonly unknown[],
+  rowIndex?: number
+): void {
+  const where = rowIndex === undefined ? "" : ` of row ${rowIndex}`;
+  for (let i = 0; i < params.length; i++) {
+    const value = params[i];
+    if (value === null || typeof value === "string" || value instanceof Uint8Array) {
+      continue;
+    }
+    if (typeof value === "number") {
+      // NaN binds as NULL instead of failing, so warn rather than throw.
+      if (Number.isNaN(value)) {
+        console.warn(
+          `[db.${helper}] parameter ${i + 1}${where} is NaN and will be stored as NULL.\n` +
+            `SQL: ${singleLine(sql)}\nParams: ${describeParams(params)}`
+        );
+      }
+      continue;
+    }
+    throw new Error(
+      `[db.${helper}] cannot bind parameter ${i + 1}${where}: ${describeValue(value)}. ` +
+        `sql.js accepts only string | number | null | Uint8Array.\n` +
+        `SQL: ${singleLine(sql)}\nParams: ${describeParams(params)}`
+    );
+  }
+}
+
 // Helper function to execute queries and return results
 export async function query<T>(
   sql: string,
   params: (string | number)[] = []
 ): Promise<T[]> {
+  assertBindableParams("query", sql, params);
   const database = await getDb();
   const stmt = database.prepare(sql);
   stmt.bind(params);
@@ -265,6 +309,7 @@ export async function execute(
   params: (string | number | null)[] = [],
   skipSave: boolean = false
 ): Promise<void> {
+  assertBindableParams("execute", sql, params);
   const database = await getDb();
   const stmt = database.prepare(sql);
   stmt.bind(params);
@@ -281,6 +326,7 @@ export async function insert(
   params: (string | number | null)[] = [],
   skipSave: boolean = false
 ): Promise<number> {
+  assertBindableParams("insert", sql, params);
   const database = await getDb();
   const stmt = database.prepare(sql);
   stmt.bind(params);
@@ -312,7 +358,9 @@ export async function insertMany(
       transactionStarted = true;
     }
 
-    for (const params of paramsArray) {
+    for (let rowIndex = 0; rowIndex < paramsArray.length; rowIndex++) {
+      const params = paramsArray[rowIndex]!;
+      assertBindableParams("insertMany", sql, params, rowIndex);
       stmt.bind(params);
       stmt.step();
       stmt.reset();
