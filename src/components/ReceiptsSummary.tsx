@@ -51,6 +51,8 @@ export default function ReceiptsSummaryCard({
             <Stat.HelpText>
               {summary.receiptsCount} receipt
               {summary.receiptsCount === 1 ? "" : "s"}
+              {summary.excludedCount > 0 &&
+                ` · ${summary.excludedCount} excluded`}
             </Stat.HelpText>
           </Stat.Root>
           {averages.map((average) => (

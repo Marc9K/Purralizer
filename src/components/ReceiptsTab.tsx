@@ -18,6 +18,7 @@ export default function ReceiptsTab() {
     clearDateFilter,
     dailySpending,
     summary,
+    toggleExcluded,
   } = useReceiptsLogic();
 
   return (
@@ -39,7 +40,12 @@ export default function ReceiptsTab() {
         dailySpending={dailySpending}
         hasDateFilter={hasDateFilter}
       />
-      <ReceiptsGrid receipts={receipts} loading={loading} viewMode={viewMode} />
+      <ReceiptsGrid
+        receipts={receipts}
+        loading={loading}
+        viewMode={viewMode}
+        onExcludedChange={toggleExcluded}
+      />
     </VStack>
   );
 }

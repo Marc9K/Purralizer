@@ -16,6 +16,9 @@ export interface Purchase {
     category?: string;
     amount: number;
   }>;
+  // 0/1: excluded purchases stay in the database but are left out of the
+  // receipts chart, totals and averages.
+  excluded?: number;
 }
 
 export interface Item {
@@ -79,7 +82,8 @@ function createTables(database: Database): void {
       overallBasketSavings REAL,
       basketValueNet REAL,
       numberOfItems INTEGER,
-      payment TEXT
+      payment TEXT,
+      excluded INTEGER NOT NULL DEFAULT 0
     )
   `);
 
@@ -174,6 +178,24 @@ function createTables(database: Database): void {
   );
 }
 
+// Columns added after a database has already been written to disk: CREATE TABLE
+// IF NOT EXISTS leaves an existing table alone, so they are added by hand here.
+// Returns whether anything changed, so the caller can persist the result.
+function migrateTables(database: Database): boolean {
+  const columns = database
+    .exec(`PRAGMA table_info(purchases)`)[0]
+    ?.values.map((row) => String(row[1]));
+
+  if (columns && !columns.includes("excluded")) {
+    database.run(
+      `ALTER TABLE purchases ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0`
+    );
+    return true;
+  }
+
+  return false;
+}
+
 async function initDatabase(): Promise<Database> {
   if (db && dbInitialized) {
     return db;
@@ -196,8 +218,9 @@ async function initDatabase(): Promise<Database> {
 
   // Always ensure tables exist (CREATE IF NOT EXISTS handles both new and existing databases)
   createTables(db);
+  const migrated = migrateTables(db);
 
-  if (!savedDb) {
+  if (!savedDb || migrated) {
     saveDatabase();
   }
 

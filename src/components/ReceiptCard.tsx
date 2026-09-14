@@ -1,4 +1,12 @@
-import { Card, HStack, Icon, Table, Text, VStack } from "@chakra-ui/react";
+import {
+  Card,
+  Checkbox,
+  HStack,
+  Icon,
+  Table,
+  Text,
+  VStack,
+} from "@chakra-ui/react";
 import { useState } from "react";
 import { IoChevronDown, IoChevronUp } from "react-icons/io5";
 import type { Receipt } from "../db/operations";
@@ -12,20 +20,26 @@ import {
 type ReceiptCardProps = {
   receipt: Receipt;
   defaultExpanded: boolean;
+  onExcludedChange: (receiptId: number, excluded: boolean) => void;
 };
 
 export default function ReceiptCard({
   receipt,
   defaultExpanded,
+  onExcludedChange,
 }: ReceiptCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const toggle = () => setExpanded((prev) => !prev);
+  const excluded = receipt.excluded;
 
   return (
     <Card.Root
       width="100%"
       variant="outline"
       cursor="pointer"
+      // Excluded receipts are still listed, so they say what they are at a
+      // glance: a dashed outline and a struck through total.
+      borderStyle={excluded ? "dashed" : "solid"}
       _hover={{ borderColor: "blue.500" }}
       className="data-card"
       role="button"
@@ -48,7 +62,12 @@ export default function ReceiptCard({
             </Text>
           </VStack>
           <HStack gap={2} align="center">
-            <Text fontSize="lg" fontWeight="bold">
+            <Text
+              fontSize="lg"
+              fontWeight="bold"
+              color={excluded ? "fg.muted" : undefined}
+              textDecoration={excluded ? "line-through" : undefined}
+            >
               {formatCurrency(receipt.total)}
             </Text>
             <Icon color="fg.muted" aria-hidden>
@@ -56,6 +75,35 @@ export default function ReceiptCard({
             </Icon>
           </HStack>
         </HStack>
+
+        {/* Only offered on an open card; a collapsed one still shows that it is
+            excluded through its dashed border and struck through total. */}
+        {expanded && (
+          <Checkbox.Root
+            mt={3}
+            size="sm"
+            checked={excluded}
+            onCheckedChange={(details) =>
+              onExcludedChange(receipt.id, details.checked === true)
+            }
+            // The whole card collapses on click and on Enter/Space, so the
+            // checkbox has to keep its own clicks and keys to itself.
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <Checkbox.HiddenInput />
+            <Checkbox.Control>
+              <Checkbox.Indicator />
+            </Checkbox.Control>
+            <Checkbox.Label
+              fontSize="xs"
+              fontWeight="normal"
+              color={excluded ? "fg" : "fg.muted"}
+            >
+              Exclude from chart and totals
+            </Checkbox.Label>
+          </Checkbox.Root>
+        )}
 
         {expanded &&
           (receipt.positions.length === 0 ? (

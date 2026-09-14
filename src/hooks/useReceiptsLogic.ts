@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { getReceipts, type Receipt } from "../db/operations";
+import {
+  getReceipts,
+  setReceiptExcluded,
+  type Receipt,
+} from "../db/operations";
 
 export type ReceiptsViewMode = "compact" | "full";
 
@@ -12,6 +16,7 @@ export interface DailySpending {
 export interface ReceiptsSummary {
   total: number;
   receiptsCount: number;
+  excludedCount: number;
   days: number;
   perDay: number;
   perWeek: number;
@@ -119,9 +124,17 @@ export function useReceiptsLogic() {
     });
   }, [receipts, fromTime, toTime]);
 
+  // Everything below counts only what is not flagged as excluded; the excluded
+  // receipts stay in `filteredReceipts` so they are still listed and can be
+  // brought back.
+  const includedReceipts = useMemo(
+    () => filteredReceipts.filter((receipt) => !receipt.excluded),
+    [filteredReceipts]
+  );
+
   const dailySpending = useMemo<DailySpending[]>(() => {
     const totals = new Map<string, number>();
-    for (const receipt of filteredReceipts) {
+    for (const receipt of includedReceipts) {
       const date = new Date(receipt.timestamp);
       if (isNaN(date.getTime())) continue;
       const key = dayKey(date);
@@ -130,10 +143,10 @@ export function useReceiptsLogic() {
     return Array.from(totals.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([day, total]) => ({ day, label: dayLabel(day), total }));
-  }, [filteredReceipts]);
+  }, [includedReceipts]);
 
   const summary = useMemo<ReceiptsSummary>(() => {
-    const total = filteredReceipts.reduce(
+    const total = includedReceipts.reduce(
       (sum, receipt) => sum + receipt.total,
       0
     );
@@ -142,7 +155,7 @@ export function useReceiptsLogic() {
     // receipts themselves define it.
     let earliest: number | null = null;
     let latest: number | null = null;
-    for (const receipt of filteredReceipts) {
+    for (const receipt of includedReceipts) {
       const time = receiptTime(receipt);
       if (isNaN(time)) continue;
       if (earliest === null || time < earliest) earliest = time;
@@ -160,7 +173,8 @@ export function useReceiptsLogic() {
 
     return {
       total,
-      receiptsCount: filteredReceipts.length,
+      receiptsCount: includedReceipts.length,
+      excludedCount: filteredReceipts.length - includedReceipts.length,
       days,
       perDay,
       perWeek: perDay * DAYS_PER_WEEK,
@@ -169,7 +183,24 @@ export function useReceiptsLogic() {
       rangeStart: start ? start.toISOString() : null,
       rangeEnd: end ? end.toISOString() : null,
     };
-  }, [filteredReceipts, fromDate, toDate]);
+  }, [filteredReceipts, includedReceipts, fromDate, toDate]);
+
+  // Flipped in place rather than by reloading every receipt, so the list does
+  // not jump while a card is being toggled; a failed write is rolled back.
+  const toggleExcluded = (receiptId: number, excluded: boolean) => {
+    const apply = (value: boolean) =>
+      setReceipts((previous) =>
+        previous.map((receipt) =>
+          receipt.id === receiptId ? { ...receipt, excluded: value } : receipt
+        )
+      );
+
+    apply(excluded);
+    setReceiptExcluded(receiptId, excluded).catch((error) => {
+      console.error("[useReceiptsLogic] failed to flag receipt:", error);
+      apply(!excluded);
+    });
+  };
 
   const hasDateFilter = fromDate !== "" || toDate !== "";
 
@@ -191,5 +222,6 @@ export function useReceiptsLogic() {
     clearDateFilter,
     dailySpending,
     summary,
+    toggleExcluded,
   };
 }

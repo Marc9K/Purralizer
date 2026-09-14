@@ -89,6 +89,9 @@ export interface Receipt {
   timestamp: string;
   total: number;
   positions: ReceiptPosition[];
+  // Excluded receipts are still listed, but left out of the spending chart,
+  // the totals and the averages.
+  excluded: boolean;
 }
 
 // XLSX import function
@@ -817,8 +820,9 @@ export async function getReceipts(): Promise<Receipt[]> {
     id: number;
     timestamp: string;
     basketValueGross: number | null;
+    excluded: number | null;
   }>(
-    `SELECT id, timestamp, basketValueGross FROM purchases ORDER BY timestamp DESC`
+    `SELECT id, timestamp, basketValueGross, excluded FROM purchases ORDER BY timestamp DESC`
   );
 
   const positions = await query<{
@@ -886,8 +890,21 @@ export async function getReceipts(): Promise<Receipt[]> {
       timestamp: purchase.timestamp,
       total,
       positions: receiptPositions,
+      excluded: purchase.excluded === 1,
     };
   });
+}
+
+// Flag a receipt as excluded (or bring it back), leaving the purchase itself
+// and everything derived from its items untouched.
+export async function setReceiptExcluded(
+  receiptId: number,
+  excluded: boolean
+): Promise<void> {
+  await execute(`UPDATE purchases SET excluded = ? WHERE id = ?`, [
+    excluded ? 1 : 0,
+    receiptId,
+  ]);
 }
 
 // Get days between purchases data for an item

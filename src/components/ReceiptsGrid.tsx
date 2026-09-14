@@ -7,12 +7,14 @@ type ReceiptsGridProps = {
   receipts: Receipt[];
   loading: boolean;
   viewMode: ReceiptsViewMode;
+  onExcludedChange: (receiptId: number, excluded: boolean) => void;
 };
 
 export default function ReceiptsGrid({
   receipts,
   loading,
   viewMode,
+  onExcludedChange,
 }: ReceiptsGridProps) {
   if (loading && receipts.length === 0) {
     return (
@@ -56,6 +58,7 @@ export default function ReceiptsGrid({
           key={`${viewMode}-${receipt.id}`}
           receipt={receipt}
           defaultExpanded={expanded}
+          onExcludedChange={onExcludedChange}
         />
       ))}
     </SimpleGrid>
