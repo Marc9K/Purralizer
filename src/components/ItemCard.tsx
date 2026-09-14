@@ -25,7 +25,7 @@ export default function ItemCard({
 
   return (
     <Link
-      href={disableNavigation ? undefined : `/item/${item.id}`}
+      href={disableNavigation ? undefined : `/Purralizer/item/${item.id}`}
       display="block"
       width="100%"
       className=""
@@ -47,42 +47,41 @@ export default function ItemCard({
             {item.name}
           </Card.Title>
           <HStack justify="space-between">
-
-          <Stack
-            gap={size === "default" ? 2 : 3}
-            mt={size === "default" ? 2 : 0}
-          >
-            {item.latestPrice !== null && (
-              <Text fontSize={priceSize} fontWeight="medium">
-                Latest Price: £{formatNumber(item.latestPrice)}
-              </Text>
-            )}
-            {item.totalQuantity > 0 && (
-              <Text fontSize={textSize}>
-                Total Bought: {formatNumber(item.totalQuantity)}
-              </Text>
-            )}
-            {item.totalSpent > 0 && (
-              <Text fontSize={textSize}>
-                Total Spent: £{formatNumber(item.totalSpent)}
-              </Text>
-            )}
-          </Stack>
-          {showSelectionControls && (
-            <Checkbox.Root
-              aria-label={`Select ${item.name}`}
-              checked={isSelected}
-              onCheckedChange={(e) =>
-                onSelectionChange?.(item.id, e.checked === true)
-              }
-              mt={2}
+            <Stack
+              gap={size === "default" ? 2 : 3}
+              mt={size === "default" ? 2 : 0}
             >
-              <Checkbox.HiddenInput />
-              <Checkbox.Control>
-                <Checkbox.Indicator />
-              </Checkbox.Control>
-            </Checkbox.Root>
-          )}
+              {item.latestPrice !== null && (
+                <Text fontSize={priceSize} fontWeight="medium">
+                  Latest Price: £{formatNumber(item.latestPrice)}
+                </Text>
+              )}
+              {item.totalQuantity > 0 && (
+                <Text fontSize={textSize}>
+                  Total Bought: {formatNumber(item.totalQuantity)}
+                </Text>
+              )}
+              {item.totalSpent > 0 && (
+                <Text fontSize={textSize}>
+                  Total Spent: £{formatNumber(item.totalSpent)}
+                </Text>
+              )}
+            </Stack>
+            {showSelectionControls && (
+              <Checkbox.Root
+                aria-label={`Select ${item.name}`}
+                checked={isSelected}
+                onCheckedChange={(e) =>
+                  onSelectionChange?.(item.id, e.checked === true)
+                }
+                mt={2}
+              >
+                <Checkbox.HiddenInput />
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+              </Checkbox.Root>
+            )}
           </HStack>
         </Card.Body>
       </Card.Root>
