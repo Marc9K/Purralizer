@@ -10,6 +10,7 @@ import CombinedListGrid from "./components/CombinedListGrid";
 import ItemsListFilters from "./components/ItemsListFilters";
 import ItemsListGrid from "./components/ItemsListGrid";
 import ItemsListHeader from "./components/ItemsListHeader";
+import ReceiptsTab from "./components/ReceiptsTab";
 import { useItemsListLogic } from "./hooks/useItemsListLogic";
 import type { SortDirection } from "./hooks/useItemsListLogic";
 import { requireItemName } from "./utils/debugGuards";
@@ -50,8 +51,13 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
   >([]);
   const [combinedLoading, setCombinedLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("items");
-  const [editingCombinedId, setEditingCombinedId] = useState<number | null>(null);
+  const [editingCombinedId, setEditingCombinedId] = useState<number | null>(
+    null,
+  );
   const [editingCombinedName, setEditingCombinedName] = useState("");
+  // Receipts bring their own filters, so the item search and sort row and the
+  // selection action bar stay out of their way.
+  const isReceiptsTab = activeTab === "receipts";
 
   const loadCombinedItems = () => {
     const currentSortField = (combinedSortField[0] || "totalSpent") as
@@ -124,9 +130,7 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
     itemIds: number[];
   }) => {
     const currentItemIds = new Set(itemsArray.map((item) => item.id));
-    setSelectedItemIds(
-      details.itemIds.filter((id) => currentItemIds.has(id))
-    );
+    setSelectedItemIds(details.itemIds.filter((id) => currentItemIds.has(id)));
     setEditingCombinedId(details.combinedItemId);
     setEditingCombinedName(details.name);
     setActiveTab("items");
@@ -139,13 +143,18 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
   };
 
   const handleSaveCombinedEdit = async () => {
-    console.log("updating combined item", editingCombinedId, editingCombinedName, selectedItemIds);
+    console.log(
+      "updating combined item",
+      editingCombinedId,
+      editingCombinedName,
+      selectedItemIds,
+    );
     if (editingCombinedId === null) return;
     try {
       await updateCombinedItem(
         editingCombinedId,
         editingCombinedName,
-        selectedItemIds
+        selectedItemIds,
       );
       resetEditingCombined();
       window.dispatchEvent(new Event("db-update"));
@@ -194,7 +203,7 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
           onFileAccept={handleFileAccept}
           onClearDatabase={handleClearDB}
           showSelectionControls={hasSearchQuery || editingCombinedId !== null}
-          isCombinedTab={activeTab === "combined"}
+          hideSelectionControls={activeTab !== "items"}
           onSelectAll={handleSelectAll}
           onDeselectAll={handleDeselectAll}
           onCombineClick={handleCombineClick}
@@ -211,41 +220,42 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
           deselectAllDisabled={selectedItemIds.length === 0}
         />
         {showItemsSection && (
-          <VStack
-            gap={4}
-            align="stretch"
-            mt={8}
-            className="widened-vertical "
-          >
-            <ItemsListFilters
-              itemsCount={itemsArray.length}
-              totalItemsCount={totalItemsCount}
-              itemsLoading={itemsLoading}
-              searchQuery={
-                activeTab === "items" ? searchQuery : combinedSearchQuery
-              }
-              onSearchQueryChange={
-                activeTab === "items" ? setSearchQuery : setCombinedSearchQuery
-              }
-              searchPlaceholder={
-                activeTab === "items"
-                  ? "Search items by name..."
-                  : "Search combined items by name..."
-              }
-              isCombinedTab={activeTab === "combined"}
-              sortField={activeTab === "items" ? sortField : combinedSortField}
-              onSortFieldChange={
-                activeTab === "items" ? setSortField : setCombinedSortField
-              }
-              sortDirection={
-                activeTab === "items" ? sortDirection : combinedSortDirection
-              }
-              onSortDirectionChange={
-                activeTab === "items"
-                  ? setSortDirection
-                  : setCombinedSortDirection
-              }
-            />
+          <VStack gap={4} align="stretch" mt={8} className="widened-vertical ">
+            {!isReceiptsTab && (
+              <ItemsListFilters
+                itemsCount={itemsArray.length}
+                totalItemsCount={totalItemsCount}
+                itemsLoading={itemsLoading}
+                searchQuery={
+                  activeTab === "items" ? searchQuery : combinedSearchQuery
+                }
+                onSearchQueryChange={
+                  activeTab === "items"
+                    ? setSearchQuery
+                    : setCombinedSearchQuery
+                }
+                searchPlaceholder={
+                  activeTab === "items"
+                    ? "Search items by name..."
+                    : "Search combined items by name..."
+                }
+                isCombinedTab={activeTab === "combined"}
+                sortField={
+                  activeTab === "items" ? sortField : combinedSortField
+                }
+                onSortFieldChange={
+                  activeTab === "items" ? setSortField : setCombinedSortField
+                }
+                sortDirection={
+                  activeTab === "items" ? sortDirection : combinedSortDirection
+                }
+                onSortDirectionChange={
+                  activeTab === "items"
+                    ? setSortDirection
+                    : setCombinedSortDirection
+                }
+              />
+            )}
             <Tabs.Root
               value={activeTab}
               onValueChange={(details) => setActiveTab(details.value)}
@@ -266,26 +276,35 @@ export default function ItemsList({ statusToaster }: ItemsListProps) {
                 >
                   Combined
                 </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="receipts"
+                  width="6rem"
+                  justifyContent="center"
+                >
+                  Receipts
+                </Tabs.Trigger>
                 <Tabs.Indicator />
               </Tabs.List>
               <Tabs.Content value="items" className="widened ">
                 <ItemsListGrid
                   items={itemsArray}
                   loading={itemsLoading}
-                  showSelectionControls={hasSearchQuery || selectedItemIds.length > 0}
+                  showSelectionControls={
+                    hasSearchQuery || selectedItemIds.length > 0
+                  }
                   selectedItemIds={selectedItemIds}
                   onSelectionChange={handleSelectionChange}
                 />
               </Tabs.Content>
-              <Tabs.Content
-                value="combined"
-                className="widened "
-              >
+              <Tabs.Content value="combined" className="widened ">
                 <CombinedListGrid
                   items={filteredCombinedItems}
                   loading={combinedLoading}
                   onEditCombinedItems={handleEditCombinedItems}
                 />
+              </Tabs.Content>
+              <Tabs.Content value="receipts" className="widened ">
+                <ReceiptsTab />
               </Tabs.Content>
             </Tabs.Root>
           </VStack>

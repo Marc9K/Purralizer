@@ -74,6 +74,23 @@ export interface DaysBetweenPurchasesResult {
   averageDays: number | null;
 }
 
+// A single line of a receipt: one item, as it was bought in one purchase.
+export interface ReceiptPosition {
+  itemId: number;
+  name: string;
+  quantity: number;
+  price: number;
+  cost: number;
+}
+
+// One purchase, with the positions that make it up.
+export interface Receipt {
+  id: number;
+  timestamp: string;
+  total: number;
+  positions: ReceiptPosition[];
+}
+
 // XLSX import function
 export async function importPurchaseDataFromXLSX(
   file: File
@@ -792,6 +809,85 @@ export async function getTotalItemsCount(): Promise<number> {
     `SELECT COUNT(*) as count FROM items`
   );
   return result[0]?.count ?? 0;
+}
+
+// Get every purchase as a receipt, with the positions it consists of
+export async function getReceipts(): Promise<Receipt[]> {
+  const purchases = await query<{
+    id: number;
+    timestamp: string;
+    basketValueGross: number | null;
+  }>(
+    `SELECT id, timestamp, basketValueGross FROM purchases ORDER BY timestamp DESC`
+  );
+
+  const positions = await query<{
+    purchaseId: number;
+    itemId: number;
+    name: string;
+    quantity: number | null;
+    price: number | null;
+  }>(
+    `SELECT 
+      a.purchaseId,
+      a.itemId,
+      i.name,
+      CASE 
+        WHEN a.volume IS NOT NULL AND a.volume > 0 
+        THEN a.volume 
+        ELSE a.quantity 
+      END as quantity,
+      (
+        SELECT p.price 
+        FROM price_purchases pp
+        JOIN prices p ON pp.priceId = p.id
+        WHERE pp.purchaseId = a.purchaseId AND p.itemId = a.itemId
+        LIMIT 1
+      ) as price
+     FROM amounts a
+     JOIN items i ON i.id = a.itemId
+     ORDER BY a.purchaseId, LOWER(i.name)`
+  );
+
+  const positionsByPurchase = new Map<number, ReceiptPosition[]>();
+  for (const row of positions) {
+    const name = requireItemName(row, "getReceipts: receipt position");
+    if (name === null) continue;
+
+    const price = row.price ?? 0;
+    const quantity = row.quantity ?? 0;
+    const position: ReceiptPosition = {
+      itemId: row.itemId,
+      name,
+      quantity,
+      price,
+      cost: price * quantity,
+    };
+
+    const existing = positionsByPurchase.get(row.purchaseId);
+    if (existing) {
+      existing.push(position);
+    } else {
+      positionsByPurchase.set(row.purchaseId, [position]);
+    }
+  }
+
+  return purchases.map((purchase) => {
+    const receiptPositions = positionsByPurchase.get(purchase.id) ?? [];
+    // Sum the positions so a receipt always adds up to what it lists; fall
+    // back to the imported basket value for purchases that have no positions.
+    const total =
+      receiptPositions.length > 0
+        ? receiptPositions.reduce((sum, position) => sum + position.cost, 0)
+        : purchase.basketValueGross ?? 0;
+
+    return {
+      id: purchase.id,
+      timestamp: purchase.timestamp,
+      total,
+      positions: receiptPositions,
+    };
+  });
 }
 
 // Get days between purchases data for an item

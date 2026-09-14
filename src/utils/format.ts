@@ -4,15 +4,29 @@ export const formatNumber = (num: number): string => {
   return rounded.toFixed(2).replace(/\.?0+$/, "");
 };
 
-export const formatDateTime = (timestamp: string): string => {
+export const formatCurrency = (amount: number): string =>
+  `£${amount.toLocaleString("en-GB", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+export const formatDate = (timestamp: string): string => {
   const date = new Date(timestamp);
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
+  return `${day}.${month}.${year}`;
+};
+
+export const formatTime = (timestamp: string): string => {
+  const date = new Date(timestamp);
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${day}.${month}.${year} ${hours}:${minutes}`;
+  return `${hours}:${minutes}`;
 };
+
+export const formatDateTime = (timestamp: string): string =>
+  `${formatDate(timestamp)} ${formatTime(timestamp)}`;
 
 export const formatShortDate = (timestamp: string): string => {
   const date = new Date(timestamp);

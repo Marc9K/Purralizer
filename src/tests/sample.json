@@ -1,0 +1,26 @@
+{
+  "requestId": "71733dfe-39b8-44cc-9e7d-c363ec4af2e7",
+  "purchases": [
+    {
+      "timestamp": "2026-09-03 18:12:03.316",
+      "type": "IN_STORE",
+      "says": "No",
+      "basketValueGross": 5.75,
+      "basketValueNet": 5.75,
+      "numberOfItems": 1,
+      "payment": [
+        { "type": "giftcard", "category": "TescoGiftCard", "amount": 5.75 }
+      ],
+      "items": [
+        {
+          "name": "Tesco Chicken Thighs 2Kg",
+          "quantity": 1,
+          "weight": 0.0,
+          "price": 5.75,
+          "volume": 1.0
+        }
+      ]
+    }
+  ],
+  "orders": []
+}
